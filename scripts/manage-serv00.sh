@@ -147,11 +147,15 @@ deploy_app() {
     export PATH=~/.npm-global/bin:~/bin:/usr/local/devil/node20/bin:$PATH
     
     # 依赖安装
-    yellow "  [4/5] 安装依赖（可能需要几分钟）..."
+    yellow "  [4/6] 安装依赖（可能需要几分钟）..."
     npm run install:all >/dev/null 2>&1 || npm run install:all
+
+    # 前端构建
+    yellow "  [5/6] 构建前端..."
+    npm run build >/dev/null 2>&1 || npm run build
     
     # 生成配置
-    yellow "  [5/5] 生成配置文件..."
+    yellow "  [6/6] 生成配置文件..."
     if [ ! -f ".env" ]; then
         JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(64).toString('base64'))")
         CRYPTO_SECRET=$(node -e "console.log(require('crypto').randomBytes(48).toString('base64'))")
