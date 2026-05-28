@@ -1019,10 +1019,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                 }
 
                 const navServerUrl = config.navUrl.replace(/\/$/, '');
-                const params = new URLSearchParams({ _t: Date.now().toString() });
-                if (request.subMenuId) params.set('subMenuId', request.subMenuId);
-
-                const response = await fetch(`${navServerUrl}/api/cards/${request.menuId}?${params.toString()}`, {
+                const response = await fetch(`${navServerUrl}/api/cards?_t=${Date.now()}`, {
                     headers: { Authorization: `Bearer ${token}` },
                     cache: 'no-store'
                 });
@@ -1035,8 +1032,12 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
                 if (!response.ok) throw new Error('获取卡片失败');
 
-                const cards = await response.json();
-                sendResponse({ success: true, cards: Array.isArray(cards) ? cards : [] });
+                const data = await response.json();
+                const cardsByCategory = data?.cardsByCategory;
+                const cards = cardsByCategory && typeof cardsByCategory === 'object'
+                    ? Object.values(cardsByCategory).flat().filter(Boolean)
+                    : [];
+                sendResponse({ success: true, cards });
             } catch (e) {
                 sendResponse({ success: false, error: e.message });
             }

@@ -1605,6 +1605,7 @@
               const pagePreview = dialogShadowRoot.querySelector('.page-preview');
               
               if (step === 'confirmation') {
+                  resetDuplicateConfirmationState();
                   // 进入确认步骤
                   quickAddSection.style.display = 'none';
                   divider.style.display = 'none';
@@ -1613,7 +1614,7 @@
                   pagePreview.style.display = 'none';
                   confirmSection.style.display = 'block';
                   backBtn.style.display = 'block';
-                  submitBtn.textContent = '确认添加';
+                  updateConfirmationSubmitState();
                   
                   // 更新确认信息
                   const customTitle = dialogShadowRoot.getElementById('customTitle').value;
@@ -1630,6 +1631,7 @@
                   checkDuplicateForConfirmation(url, customTitle);
               } else {
                   // 返回选择步骤
+                  resetDuplicateConfirmationState();
                   // 如果有上次选择，显示快速添加
                   if (lastMenuId) {
                       quickAddSection.style.display = 'block';
@@ -1699,6 +1701,7 @@
           selectedMenuId = null;
           selectedSubMenuId = null;
           currentStep = 'selection';
+          resetDuplicateConfirmationState();
       }
     
     // ESC 处理
@@ -1720,6 +1723,34 @@
       let currentStep = 'selection'; // 'selection' or 'confirmation'
       let isReorderMode = false;
       let reorderInFlight = false;
+      let confirmationDuplicateMatch = null;
+      let duplicateCheckInFlight = false;
+      let similarDuplicateConfirmed = false;
+
+    function resetDuplicateConfirmationState() {
+        confirmationDuplicateMatch = null;
+        duplicateCheckInFlight = false;
+        similarDuplicateConfirmed = false;
+    }
+
+    function updateConfirmationSubmitState() {
+        const submitBtn = dialogShadowRoot?.getElementById('submitBtn');
+        if (!submitBtn || currentStep !== 'confirmation') return;
+
+        if (duplicateCheckInFlight) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = '检测中...';
+            return;
+        }
+
+        submitBtn.disabled = false;
+        if (confirmationDuplicateMatch?.type === 'similar' && !similarDuplicateConfirmed) {
+            submitBtn.textContent = '继续添加';
+            return;
+        }
+
+        submitBtn.textContent = '确认添加';
+    }
 
     function getNewCategoryInsertAfterId() {
         if (selectedMenuId && !selectedSubMenuId) {
@@ -1883,7 +1914,16 @@
 
     async function checkDuplicateForConfirmation(url, title) {
         renderDuplicateHint(null);
-        if (!selectedMenuId) return;
+        confirmationDuplicateMatch = null;
+        similarDuplicateConfirmed = false;
+        if (!selectedMenuId) {
+            duplicateCheckInFlight = false;
+            updateConfirmationSubmitState();
+            return;
+        }
+
+        duplicateCheckInFlight = true;
+        updateConfirmationSubmitState();
 
         try {
             const response = await chrome.runtime.sendMessage({
@@ -1903,15 +1943,20 @@
                 }
                 const candidate = { ...match, card, url };
                 if (match.type === 'exact') {
+                    confirmationDuplicateMatch = candidate;
                     renderDuplicateHint(candidate);
                     return;
                 }
                 if (!similarMatch) similarMatch = candidate;
             }
 
+            confirmationDuplicateMatch = similarMatch;
             renderDuplicateHint(similarMatch);
         } catch (e) {
             console.warn('重复检测失败:', e);
+        } finally {
+            duplicateCheckInFlight = false;
+            updateConfirmationSubmitState();
         }
     }
 
@@ -2744,6 +2789,18 @@ if (response.success) {
     async function submitAdd(url) {
         if (!selectedMenuId) {
             showToast('请选择分类', 'error');
+            return;
+        }
+
+        if (duplicateCheckInFlight) {
+            showToast('正在检测相似网站，请稍候', 'error');
+            return;
+        }
+
+        if (confirmationDuplicateMatch?.type === 'similar' && !similarDuplicateConfirmed) {
+            similarDuplicateConfirmed = true;
+            updateConfirmationSubmitState();
+            showToast('检测到相似网站，请再次点击确认添加', 'error');
             return;
         }
         

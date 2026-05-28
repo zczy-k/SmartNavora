@@ -1,10 +1,301 @@
 const express = require('express');
+const axios = require('axios');
+const dns = require('dns').promises;
 const db = require('../db');
 const auth = require('./authMiddleware');
 const { triggerDebouncedBackup } = require('../utils/autoBackup');
 const { detectDuplicates, getDuplicateMatch } = require('../utils/urlNormalizer');
 const { autoGenerateForCards } = require('./ai');
 const router = express.Router();
+
+const INVALID_LINK_TIMEOUT_MS = 8000;
+const INVALID_LINK_CONCURRENCY = 8;
+
+function isPrivateHostname(hostname) {
+  const value = (hostname || '').toLowerCase();
+  if (!value) return true;
+  if (value === 'localhost' || value.endsWith('.local')) return true;
+  if (/^10\./.test(value) || /^127\./.test(value) || /^192\.168\./.test(value)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(value)) return true;
+  if (/^169\.254\./.test(value)) return true;
+  if (value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe80:')) return true;
+  return false;
+}
+
+function normalizeDetectionError(error) {
+  const code = error?.code || '';
+  const message = error?.message || '';
+  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') {
+    return { reason: '连接超时', bucket: 'maybe_invalid', confidence: 'possible' };
+  }
+  if (code === 'ENOTFOUND') {
+    return { reason: '域名解析失败', bucket: 'safe_to_delete', confidence: 'high' };
+  }
+  if (code === 'ECONNREFUSED') {
+    return { reason: '连接被拒绝', bucket: 'maybe_invalid', confidence: 'possible' };
+  }
+  if (/certificate|ssl/i.test(message)) {
+    return { reason: 'SSL 证书错误', bucket: 'maybe_invalid', confidence: 'possible' };
+  }
+  return { reason: message || '无法访问', bucket: 'maybe_invalid', confidence: 'possible' };
+}
+
+async function checkDnsStatus(hostname) {
+  try {
+    await dns.lookup(hostname);
+    return { status: 'ok', reason: 'DNS 解析成功' };
+  } catch (error) {
+    if (error?.code === 'ENOTFOUND' || error?.code === 'EAI_NONAME') {
+      return { status: 'nxdomain', reason: '域名不存在' };
+    }
+    return { status: 'error', reason: 'DNS 检测失败' };
+  }
+}
+
+async function requestUrl(url, method) {
+  return axios({
+    url,
+    method,
+    timeout: INVALID_LINK_TIMEOUT_MS,
+    maxRedirects: 5,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    },
+    validateStatus: () => true
+  });
+}
+
+async function detectInvalidCard(card) {
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(card.url);
+  } catch (_error) {
+    return {
+      id: card.id,
+      title: card.title,
+      url: card.url,
+      menuName: card.menu_name || '未分类',
+      subMenuName: card.sub_menu_name || '',
+      bucket: 'safe_to_delete',
+      confidence: 'high',
+      reason: '链接格式无效',
+      detail: '无法解析为有效 URL',
+      statusCode: null
+    };
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return {
+      id: card.id,
+      title: card.title,
+      url: card.url,
+      menuName: card.menu_name || '未分类',
+      subMenuName: card.sub_menu_name || '',
+      bucket: 'skipped',
+      confidence: 'skip',
+      reason: '非 HTTP 链接',
+      detail: parsedUrl.protocol,
+      statusCode: null
+    };
+  }
+
+  if (isPrivateHostname(parsedUrl.hostname)) {
+    return {
+      id: card.id,
+      title: card.title,
+      url: card.url,
+      menuName: card.menu_name || '未分类',
+      subMenuName: card.sub_menu_name || '',
+      bucket: 'skipped',
+      confidence: 'skip',
+      reason: '内网或本地地址',
+      detail: parsedUrl.hostname,
+      statusCode: null
+    };
+  }
+
+  try {
+    let response = await requestUrl(card.url, 'head');
+    if (response.status === 405 || response.status === 501 || response.status === 403) {
+      response = await requestUrl(card.url, 'get');
+    }
+
+    if ((response.status >= 200 && response.status < 400) || response.status === 401 || response.status === 403) {
+      return {
+        id: card.id,
+        title: card.title,
+        url: card.url,
+        menuName: card.menu_name || '未分类',
+        subMenuName: card.sub_menu_name || '',
+        bucket: 'valid',
+        confidence: 'valid',
+        reason: '访问正常',
+        detail: `HTTP ${response.status}`,
+        statusCode: response.status
+      };
+    }
+
+    if (response.status === 404 || response.status === 410) {
+      return {
+        id: card.id,
+        title: card.title,
+        url: card.url,
+        menuName: card.menu_name || '未分类',
+        subMenuName: card.sub_menu_name || '',
+        bucket: 'safe_to_delete',
+        confidence: 'high',
+        reason: response.status === 404 ? '页面不存在' : '页面已永久删除',
+        detail: `HTTP ${response.status}`,
+        statusCode: response.status
+      };
+    }
+
+    const dnsStatus = await checkDnsStatus(parsedUrl.hostname);
+    return {
+      id: card.id,
+      title: card.title,
+      url: card.url,
+      menuName: card.menu_name || '未分类',
+      subMenuName: card.sub_menu_name || '',
+      bucket: dnsStatus.status === 'nxdomain' ? 'safe_to_delete' : 'maybe_invalid',
+      confidence: dnsStatus.status === 'nxdomain' ? 'high' : 'possible',
+      reason: dnsStatus.status === 'nxdomain' ? '域名不存在' : `HTTP ${response.status}`,
+      detail: dnsStatus.reason,
+      statusCode: response.status
+    };
+  } catch (error) {
+    const normalized = normalizeDetectionError(error);
+    const dnsStatus = await checkDnsStatus(parsedUrl.hostname);
+    const bucket = normalized.bucket === 'safe_to_delete' || dnsStatus.status === 'nxdomain'
+      ? 'safe_to_delete'
+      : 'maybe_invalid';
+    const reason = dnsStatus.status === 'nxdomain' ? '域名不存在' : normalized.reason;
+    const detail = dnsStatus.status === 'ok'
+      ? `DNS 正常，${normalized.reason}`
+      : dnsStatus.reason;
+
+    return {
+      id: card.id,
+      title: card.title,
+      url: card.url,
+      menuName: card.menu_name || '未分类',
+      subMenuName: card.sub_menu_name || '',
+      bucket,
+      confidence: bucket === 'safe_to_delete' ? 'high' : 'possible',
+      reason,
+      detail,
+      statusCode: error?.response?.status || null
+    };
+  }
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let index = 0;
+
+  async function runWorker() {
+    while (index < items.length) {
+      const currentIndex = index;
+      index += 1;
+      results[currentIndex] = await worker(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(limit, items.length) }, () => runWorker());
+  await Promise.all(workers);
+  return results;
+}
+
+async function buildInvalidLinkDetectionResult(cards) {
+  const detectionResults = await mapWithConcurrency(cards, INVALID_LINK_CONCURRENCY, detectInvalidCard);
+  const safeToDelete = detectionResults.filter(item => item.bucket === 'safe_to_delete');
+  const maybeInvalid = detectionResults.filter(item => item.bucket === 'maybe_invalid');
+  const skipped = detectionResults.filter(item => item.bucket === 'skipped');
+  const validCount = detectionResults.filter(item => item.bucket === 'valid').length;
+
+  return {
+    scannedAt: new Date().toISOString(),
+    total: cards.length,
+    validCount,
+    safeToDelete,
+    maybeInvalid,
+    skipped,
+    summary: {
+      safeToDelete: safeToDelete.length,
+      maybeInvalid: maybeInvalid.length,
+      skipped: skipped.length,
+      valid: validCount
+    }
+  };
+}
+
+function loadCardsForInvalidLinkCheck(whereClause = '', params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(`
+      SELECT c.id, c.title, c.url, c.menu_id, c.sub_menu_id, m.name AS menu_name, sm.name AS sub_menu_name
+      FROM cards c
+      LEFT JOIN menus m ON c.menu_id = m.id
+      LEFT JOIN sub_menus sm ON c.sub_menu_id = sm.id
+      ${whereClause}
+      ORDER BY c.id DESC
+    `, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+}
+
+function deleteCardsByIds(cardIds, clientId) {
+  return new Promise((resolve, reject) => {
+    if (!Array.isArray(cardIds) || cardIds.length === 0) {
+      resolve({ success: true, deleted: 0, message: '未提供要删除的卡片' });
+      return;
+    }
+
+    const placeholders = cardIds.map(() => '?').join(',');
+
+    db.serialize(() => {
+      db.run('BEGIN TRANSACTION', (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        db.run(`DELETE FROM card_tags WHERE card_id IN (${placeholders})`, cardIds, (tagErr) => {
+          if (tagErr) {
+            db.run('ROLLBACK');
+            reject(new Error('删除标签关联失败: ' + tagErr.message));
+            return;
+          }
+
+          db.run(`DELETE FROM cards WHERE id IN (${placeholders})`, cardIds, function(cardErr) {
+            if (cardErr) {
+              db.run('ROLLBACK');
+              reject(new Error('删除卡片失败: ' + cardErr.message));
+              return;
+            }
+
+            const deletedCount = this.changes;
+            db.run('COMMIT', (commitErr) => {
+              if (commitErr) {
+                reject(new Error('提交事务失败: ' + commitErr.message));
+                return;
+              }
+
+              triggerDebouncedBackup(clientId, { type: 'cards_updated' });
+              resolve({
+                success: true,
+                deleted: deletedCount,
+                message: `成功删除 ${deletedCount} 张卡片`
+              });
+            });
+          });
+        });
+      });
+    });
+  });
+}
 
 // 获取所有卡片（按分类分组，用于首屏加载优化）
 router.get('/', (req, res) => {
@@ -348,6 +639,31 @@ router.delete('/:id', auth, (req, res) => {
   });
 });
 
+router.get('/invalid-links/check/all', auth, async (req, res) => {
+  try {
+    const cards = await loadCardsForInvalidLinkCheck();
+    res.json(await buildInvalidLinkDetectionResult(cards));
+  } catch (error) {
+    res.status(500).json({ error: error.message || '检测失效链接失败' });
+  }
+});
+
+router.post('/invalid-links/recheck', auth, async (req, res) => {
+  const { cardIds } = req.body;
+
+  if (!Array.isArray(cardIds) || cardIds.length === 0) {
+    return res.status(400).json({ error: '请选择要重新检测的卡片' });
+  }
+
+  try {
+    const placeholders = cardIds.map(() => '?').join(',');
+    const cards = await loadCardsForInvalidLinkCheck(`WHERE c.id IN (${placeholders})`, cardIds);
+    res.json(await buildInvalidLinkDetectionResult(cards));
+  } catch (error) {
+    res.status(500).json({ error: error.message || '重新检测失败' });
+  }
+});
+
 // 检测重复卡片
 router.get('/detect-duplicates/all', auth, (req, res) => {
   db.all('SELECT * FROM cards ORDER BY id', [], (err, cards) => {
@@ -381,52 +697,20 @@ router.post('/:id/click', (req, res) => {
 // 批量删除重复卡片
 router.post('/remove-duplicates', auth, (req, res) => {
   const { cardIds } = req.body;
-  
-  if (!Array.isArray(cardIds) || cardIds.length === 0) {
-    return res.status(400).json({ error: '无效的请求数据' });
-  }
-  
-  const placeholders = cardIds.map(() => '?').join(',');
-  
-  // 使用事务确保数据一致性
-  db.serialize(() => {
-    db.run('BEGIN TRANSACTION', (err) => {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      
-      // 先删除关联的标签（防止外键约束问题）
-      db.run(`DELETE FROM card_tags WHERE card_id IN (${placeholders})`, cardIds, (err) => {
-        if (err) {
-          db.run('ROLLBACK');
-          return res.status(500).json({ error: '删除标签关联失败: ' + err.message });
-        }
-        
-        // 再删除卡片
-        db.run(`DELETE FROM cards WHERE id IN (${placeholders})`, cardIds, function(err) {
-          if (err) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: '删除卡片失败: ' + err.message });
-          }
-          
-          const deletedCount = this.changes;
-          
-          db.run('COMMIT', (err) => {
-            if (err) {
-              return res.status(500).json({ error: '提交事务失败: ' + err.message });
-            }
-            
-            triggerDebouncedBackup();
-            res.json({ 
-              success: true,
-              deleted: deletedCount,
-              message: `成功删除 ${deletedCount} 张卡片`
-            });
-          });
-        });
-      });
-    });
-  });
+  const clientId = req.headers['x-client-id'];
+
+  deleteCardsByIds(cardIds, clientId)
+    .then(result => res.json(result))
+    .catch(error => res.status(500).json({ error: error.message || '删除失败' }));
+});
+
+router.post('/remove-many', auth, (req, res) => {
+  const { cardIds } = req.body;
+  const clientId = req.headers['x-client-id'];
+
+  deleteCardsByIds(cardIds, clientId)
+    .then(result => res.json(result))
+    .catch(error => res.status(500).json({ error: error.message || '删除失败' }));
 });
 
 router.get('/user-settings/sort', (req, res) => {

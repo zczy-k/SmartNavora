@@ -117,6 +117,9 @@ export const getTagCardCount = (id) => instance.get(`/tags/${id}/cards/count`);
 // 卡片去重API
 export const detectDuplicates = () => instance.get(`/cards/detect-duplicates/all?_t=${Date.now()}`);
 export const removeDuplicates = (cardIds) => instance.post(`/cards/remove-duplicates`, { cardIds });
+export const detectInvalidLinks = () => instance.get(`/cards/invalid-links/check/all?_t=${Date.now()}`);
+export const recheckInvalidLinks = (cardIds) => instance.post(`/cards/invalid-links/recheck`, { cardIds });
+export const removeManyCards = (cardIds) => instance.post(`/cards/remove-many`, { cardIds });
 
 // 备份API
 export const createBackup = (name, description) => instance.post(`/backup/create`, { name, description });

@@ -40,6 +40,7 @@
         <li :class="{active: page==='menu'}" @click="page='menu'; closeSider()">结构管理</li>
         <li :class="{active: page==='card'}" @click="page='card'; closeSider()">卡片治理</li>
         <li :class="{active: page==='duplicate'}" @click="page='duplicate'; closeSider()">重复清理</li>
+        <li :class="{active: page==='invalid'}" @click="page='invalid'; closeSider()">失效链接治理</li>
         <li :class="{active: page==='tag'}" @click="page='tag'; closeSider()">标签治理</li>
         <li :class="{active: page==='promo'}" @click="page='promo'; closeSider()">宣传位管理</li>
         <li :class="{active: page==='friend'}" @click="page='friend'; closeSider()">友情链接管理</li>
@@ -80,6 +81,7 @@ import WelcomePage from './admin/WelcomePage.vue';
 import MenuManage from './admin/MenuManage.vue';
 import CardManage from './admin/CardManage.vue';
 import DuplicateManage from './admin/DuplicateManage.vue';
+import InvalidLinkManage from './admin/InvalidLinkManage.vue';
 import TagManage from './admin/TagManage.vue';
 import PromoManage from './admin/PromoManage.vue';
 import FriendLinkManage from './admin/FriendLinkManage.vue';
@@ -163,6 +165,7 @@ const componentMap = {
   menu: MenuManage,
   card: CardManage,
   duplicate: DuplicateManage,
+  invalid: InvalidLinkManage,
   tag: TagManage,
   promo: PromoManage,
   friend: FriendLinkManage,
@@ -203,6 +206,7 @@ const pageTitle = computed(() => {
       case 'menu': return '结构管理';
       case 'card': return '卡片治理';
       case 'duplicate': return '重复清理';
+      case 'invalid': return '失效链接治理';
       case 'tag': return '标签治理';
       case 'promo': return '宣传位管理';
       case 'friend': return '友情链接管理';

@@ -1,5 +1,6 @@
 ﻿<template>
   <div class="card-manage">
+    <div v-if="showToast" class="page-toast" :class="toastType">{{ toastMessage }}</div>
     <div class="card-header">
       <div class="header-content">
         <h2 class="page-title">卡片治理</h2>
@@ -228,6 +229,7 @@ import { ref, onMounted, watch, computed } from 'vue';
 import { 
   getMenus, 
   getCards, 
+  getAllCards,
   addCard as apiAddCard, 
   updateCard as apiUpdateCard, 
   deleteCard as apiDeleteCard,
@@ -247,6 +249,10 @@ const allTags = ref([]);
 const showTagModal = ref(false);
 const currentEditCard = ref(null);
 const selectedTagIds = ref([]);
+const showToast = ref(false);
+const toastMessage = ref('');
+const toastType = ref('success');
+let toastTimer = null;
 
 // 重复检测相关状态
 const showDuplicateModal = ref(false);
@@ -305,6 +311,28 @@ watch(selectedMenuId, () => {
 
 watch(selectedSubMenuId, loadCards);
 
+function showToastMessage(message, type = 'success', duration = 2200) {
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+
+  if (!message) {
+    showToast.value = false;
+    return;
+  }
+
+  toastMessage.value = message;
+  toastType.value = type;
+  showToast.value = true;
+
+  if (duration > 0) {
+    toastTimer = setTimeout(() => {
+      showToast.value = false;
+    }, duration);
+  }
+}
+
 useDataSync('CardManage', ({ isSelfChange }) => {
   if (!isSelfChange) {
     loadMenus();
@@ -351,12 +379,18 @@ async function loadMenus() {
 }
 
 async function addCard() {
-  if (!newCardTitle.value || !newCardUrl.value) return;
+  if (!newCardTitle.value || !newCardUrl.value) {
+    showToastMessage('请先填写卡片标题和链接', 'error');
+    return;
+  }
+
+  const allCardsRes = await getAllCards(true);
+  const allExistingCards = Object.values(allCardsRes.data?.cardsByCategory || {}).flat();
   
   // 检测重复
   let duplicate = null;
   let duplicateMatch = null;
-  for (const card of cards.value) {
+  for (const card of allExistingCards) {
     const match = getDuplicateMatch(
       { title: newCardTitle.value, url: newCardUrl.value },
       card
@@ -525,9 +559,8 @@ function editAndAdd() {
   newCardLogo.value = pendingCard.value.logo_url || '';
   
   closeDuplicateModal();
-  
-  // 提示用户修改
-  alert('请修改卡片信息后再次点击“添加卡片”按钮');
+
+  showToastMessage('已带回待添加内容，修改后直接重新点击“添加卡片”即可', 'info', 2600);
 }
 </script>
 
@@ -539,6 +572,32 @@ function editAndAdd() {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.page-toast {
+  position: sticky;
+  top: 16px;
+  z-index: 30;
+  align-self: center;
+  margin-bottom: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+}
+
+.page-toast.success {
+  background: #16a34a;
+}
+
+.page-toast.info {
+  background: #2563eb;
+}
+
+.page-toast.error {
+  background: #dc2626;
 }
 
 .card-header {

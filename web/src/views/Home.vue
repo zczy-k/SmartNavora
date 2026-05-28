@@ -2998,9 +2998,9 @@ async function parseUrls() {
     // 1. 解析 URL
     const response = await batchParseUrls(urls);
     
-    // 2. 获取所有现有卡片，用于重复检测
-    const existingCardsRes = await getCards(activeMenu.value.id, activeSubMenu.value?.id);
-    const existingCards = existingCardsRes.data;
+    // 2. 获取全站现有卡片，用于重复检测，和最终提交规则保持一致
+    const existingCardsRes = await getAllCards(true);
+    const existingCards = Object.values(existingCardsRes.data?.cardsByCategory || {}).flat();
     
     // 3. 检测重复并标记
     parsedCards.value = response.data.data.map(card => {
