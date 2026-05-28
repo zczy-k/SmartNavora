@@ -66,6 +66,10 @@ async function requestUrl(url, method) {
   });
 }
 
+function isAccessibleStatus(status) {
+  return (status >= 200 && status < 400) || status === 401 || status === 403;
+}
+
 async function detectInvalidCard(card) {
   let parsedUrl;
   try {
@@ -117,11 +121,11 @@ async function detectInvalidCard(card) {
 
   try {
     let response = await requestUrl(card.url, 'head');
-    if (response.status === 405 || response.status === 501 || response.status === 403) {
+    if (!isAccessibleStatus(response.status)) {
       response = await requestUrl(card.url, 'get');
     }
 
-    if ((response.status >= 200 && response.status < 400) || response.status === 401 || response.status === 403) {
+    if (isAccessibleStatus(response.status)) {
       return {
         id: card.id,
         title: card.title,
@@ -136,6 +140,7 @@ async function detectInvalidCard(card) {
       };
     }
 
+    // 只有在 GET 复核后仍然返回 404/410，才归类为确定失效
     if (response.status === 404 || response.status === 410) {
       return {
         id: card.id,
