@@ -11,7 +11,7 @@
     "follow-redirects": "^1.15.12",
     "minimatch": "^9.0.7",
     "brace-expansion": "^2.0.3",
-    "qs": "^6.15.0",
+    "qs": "6.15.2",
     "tar": "^7.5.11",
     "fast-xml-parser": "^5.3.8",
     "ip-address": "^10.1.1"
