@@ -35,18 +35,18 @@
   
   <div v-else class="admin-layout">
     <aside class="admin-sider" :class="{ open: siderOpen }" @click.self="closeSider">
-      <div class="logo clickable" @click="page='welcome'; closeSider()">Admin</div>
+      <div class="logo clickable" @click="requestPageChange('welcome')">Admin</div>
       <ul class="menu-list">
-        <li :class="{active: page==='menu'}" @click="page='menu'; closeSider()">结构管理</li>
-        <li :class="{active: page==='card'}" @click="page='card'; closeSider()">卡片治理</li>
-        <li :class="{active: page==='duplicate'}" @click="page='duplicate'; closeSider()">重复清理</li>
-        <li :class="{active: page==='invalid'}" @click="page='invalid'; closeSider()">失效链接治理</li>
-        <li :class="{active: page==='tag'}" @click="page='tag'; closeSider()">标签治理</li>
-        <li :class="{active: page==='promo'}" @click="page='promo'; closeSider()">宣传位管理</li>
-        <li :class="{active: page==='friend'}" @click="page='friend'; closeSider()">友情链接管理</li>
-        <li :class="{active: page==='user'}" @click="page='user'; closeSider()">用户与权限</li>
-        <li :class="{active: page==='backup'}" @click="page='backup'; closeSider()">备份与恢复</li>
-        <li :class="{active: page==='ai'}" @click="page='ai'; closeSider()">AI 配置</li>
+        <li :class="{active: page==='menu'}" @click="requestPageChange('menu')">结构管理</li>
+        <li :class="{active: page==='card'}" @click="requestPageChange('card')">卡片治理</li>
+        <li :class="{active: page==='duplicate'}" @click="requestPageChange('duplicate')">重复清理</li>
+        <li :class="{active: page==='invalid'}" @click="requestPageChange('invalid')">失效链接治理</li>
+        <li :class="{active: page==='tag'}" @click="requestPageChange('tag')">标签治理</li>
+        <li :class="{active: page==='promo'}" @click="requestPageChange('promo')">宣传位管理</li>
+        <li :class="{active: page==='friend'}" @click="requestPageChange('friend')">友情链接管理</li>
+        <li :class="{active: page==='user'}" @click="requestPageChange('user')">用户与权限</li>
+        <li :class="{active: page==='backup'}" @click="requestPageChange('backup')">备份与恢复</li>
+        <li :class="{active: page==='ai'}" @click="requestPageChange('ai')">AI 配置</li>
       </ul>
     </aside>
     <main class="admin-main">
@@ -149,6 +149,25 @@ function removeActivityListeners() {
   activityEvents.forEach(event => {
     document.removeEventListener(event, resetIdleTimer);
   });
+}
+
+function hasActiveInvalidLinkScan() {
+  return typeof window !== 'undefined' && window.__smartnavoraInvalidScanActive === true;
+}
+
+function confirmInvalidLinkScanLeave() {
+  if (!hasActiveInvalidLinkScan()) return true;
+  return confirm('失效链接检测正在进行中。切换页面将导致当前检测进度和结果丢失，确定要离开吗？');
+}
+
+function requestPageChange(nextPage) {
+  if (page.value === nextPage) {
+    closeSider();
+    return;
+  }
+  if (!confirmInvalidLinkScanLeave()) return;
+  page.value = nextPage;
+  closeSider();
 }
 
 // 组件卸载时清理
@@ -288,6 +307,7 @@ async function handleLogin() {
 }
 
 function logout() {
+  if (!confirmInvalidLinkScanLeave()) return;
   // 清理空闲计时器
   if (idleTimer) {
     clearTimeout(idleTimer);
@@ -303,6 +323,7 @@ function logout() {
 }
 
 function goHome() {
+  if (!confirmInvalidLinkScanLeave()) return;
   window.open('/', '_blank');
 }
 function toggleSider() {
