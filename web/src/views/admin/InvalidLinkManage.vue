@@ -6,7 +6,7 @@
         <p class="page-desc">扫描全部卡片链接，优先清理明确失效的站点，并把可能失效的链接单独列出人工确认。</p>
       </div>
       <button @click="handleDetectInvalidLinks" class="btn btn-primary" :disabled="detecting || removing">
-        {{ detecting ? '检测中...' : '🔗 一键检测失效链接' }}
+        {{ detecting ? (detectProgressText || '检测中...') : '🔗 一键检测失效链接' }}
       </button>
     </div>
 
@@ -147,7 +147,7 @@
 
 <script setup>
 import { computed, ref } from 'vue';
-import { detectInvalidLinks, recheckInvalidLinks, removeManyCards } from '../../api';
+import { getAllCards, recheckInvalidLinks, removeManyCards } from '../../api';
 
 const detecting = ref(false);
 const removing = ref(false);
@@ -160,6 +160,7 @@ const maybeInvalid = ref([]);
 const skipped = ref([]);
 const selectedSafeIds = ref([]);
 const selectedMaybeIds = ref([]);
+const detectProgressText = ref('');
 
 const formattedScannedAt = computed(() => {
   if (!scannedAt.value) return '';
@@ -190,6 +191,34 @@ function resetSelections() {
   selectedMaybeIds.value = [];
 }
 
+function chunkArray(items, chunkSize) {
+  const result = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    result.push(items.slice(i, i + chunkSize));
+  }
+  return result;
+}
+
+function refreshSummary(total = summary.value?.total || 0, skippedCount = skipped.value.length) {
+  summary.value = {
+    total,
+    valid: Math.max(total - safeToDelete.value.length - maybeInvalid.value.length - skippedCount, 0),
+    safeToDelete: safeToDelete.value.length,
+    maybeInvalid: maybeInvalid.value.length,
+    skipped: skippedCount
+  };
+}
+
+function applyDetectionSnapshot(data) {
+  scannedAt.value = data.scannedAt || '';
+  safeToDelete.value = data.safeToDelete || [];
+  maybeInvalid.value = data.maybeInvalid || [];
+  skipped.value = data.skipped || [];
+  refreshSummary(data.total || 0, skipped.value.length);
+  resetSelections();
+  detected.value = true;
+}
+
 function mergeRecheckResults(data, checkedIds) {
   const recheckedItems = [...(data.safeToDelete || []), ...(data.maybeInvalid || [])];
   const validIds = new Set((checkedIds || []).filter(id => !recheckedItems.some(item => item.id === id)));
@@ -210,11 +239,7 @@ function mergeRecheckResults(data, checkedIds) {
     errorMsg.value = `已重新检测 ${checkedIds.length} 项。`;
   }
 
-  summary.value = {
-    ...(summary.value || {}),
-    safeToDelete: safeToDelete.value.length,
-    maybeInvalid: maybeInvalid.value.length
-  };
+  refreshSummary();
 
   selectedSafeIds.value = selectedSafeIds.value.filter(id => !checkedIds.includes(id));
   selectedMaybeIds.value = selectedMaybeIds.value.filter(id => !checkedIds.includes(id));
@@ -223,24 +248,61 @@ function mergeRecheckResults(data, checkedIds) {
 async function handleDetectInvalidLinks() {
   detecting.value = true;
   errorMsg.value = '';
+  detectProgressText.value = '正在获取卡片列表...';
   try {
-    const res = await detectInvalidLinks();
-    scannedAt.value = res.data.scannedAt || '';
-    summary.value = {
-      total: res.data.total || 0,
-      valid: res.data.summary?.valid || 0,
-      safeToDelete: res.data.summary?.safeToDelete || 0,
-      maybeInvalid: res.data.summary?.maybeInvalid || 0,
-      skipped: res.data.summary?.skipped || 0
-    };
-    safeToDelete.value = res.data.safeToDelete || [];
-    maybeInvalid.value = res.data.maybeInvalid || [];
-    skipped.value = res.data.skipped || [];
-    resetSelections();
-    detected.value = true;
+    const cardsRes = await getAllCards(true);
+    const allCards = Object.values(cardsRes.data?.cardsByCategory || {}).flat().filter(Boolean);
+    const allIds = allCards.map(card => card.id).filter(Boolean);
+
+    if (allIds.length === 0) {
+      applyDetectionSnapshot({ scannedAt: new Date().toISOString(), total: 0, safeToDelete: [], maybeInvalid: [], skipped: [] });
+      return;
+    }
+
+    const batches = chunkArray(allIds, 20);
+    const mergedSafe = [];
+    const mergedMaybe = [];
+    const mergedSkipped = [];
+    const seenIds = new Set();
+
+    for (let i = 0; i < batches.length; i++) {
+      detectProgressText.value = `正在检测 ${Math.min((i + 1) * 20, allIds.length)}/${allIds.length}...`;
+      const res = await recheckInvalidLinks(batches[i]);
+      const data = res.data || {};
+
+      for (const item of data.safeToDelete || []) {
+        if (!seenIds.has(`safe_${item.id}`)) {
+          mergedSafe.push(item);
+          seenIds.add(`safe_${item.id}`);
+        }
+      }
+
+      for (const item of data.maybeInvalid || []) {
+        if (!seenIds.has(`maybe_${item.id}`)) {
+          mergedMaybe.push(item);
+          seenIds.add(`maybe_${item.id}`);
+        }
+      }
+
+      for (const item of data.skipped || []) {
+        if (!seenIds.has(`skip_${item.id}`)) {
+          mergedSkipped.push(item);
+          seenIds.add(`skip_${item.id}`);
+        }
+      }
+    }
+
+    applyDetectionSnapshot({
+      scannedAt: new Date().toISOString(),
+      total: allIds.length,
+      safeToDelete: mergedSafe.sort((a, b) => b.id - a.id),
+      maybeInvalid: mergedMaybe.sort((a, b) => b.id - a.id),
+      skipped: mergedSkipped.sort((a, b) => b.id - a.id)
+    });
   } catch (error) {
     errorMsg.value = error.response?.data?.error || '检测失效链接失败';
   } finally {
+    detectProgressText.value = '';
     detecting.value = false;
   }
 }
