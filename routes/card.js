@@ -70,6 +70,19 @@ function isAccessibleStatus(status) {
   return (status >= 200 && status < 400) || status === 401 || status === 403;
 }
 
+function isRetryableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function shouldRetryForError(error) {
+  const code = error?.code || '';
+  return ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET', 'EPIPE'].includes(code);
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function detectInvalidCard(card) {
   let parsedUrl;
   try {
@@ -125,6 +138,11 @@ async function detectInvalidCard(card) {
       response = await requestUrl(card.url, 'get');
     }
 
+    if (!isAccessibleStatus(response.status) && isRetryableStatus(response.status)) {
+      await delay(600);
+      response = await requestUrl(card.url, 'get');
+    }
+
     if (isAccessibleStatus(response.status)) {
       return {
         id: card.id,
@@ -170,6 +188,44 @@ async function detectInvalidCard(card) {
       statusCode: response.status
     };
   } catch (error) {
+    if (shouldRetryForError(error)) {
+      try {
+        await delay(600);
+        const retryResponse = await requestUrl(card.url, 'get');
+        if (isAccessibleStatus(retryResponse.status)) {
+          return {
+            id: card.id,
+            title: card.title,
+            url: card.url,
+            menuName: card.menu_name || '未分类',
+            subMenuName: card.sub_menu_name || '',
+            bucket: 'valid',
+            confidence: 'valid',
+            reason: '访问正常',
+            detail: `重试后恢复，HTTP ${retryResponse.status}`,
+            statusCode: retryResponse.status
+          };
+        }
+
+        if (retryResponse.status === 404 || retryResponse.status === 410) {
+          return {
+            id: card.id,
+            title: card.title,
+            url: card.url,
+            menuName: card.menu_name || '未分类',
+            subMenuName: card.sub_menu_name || '',
+            bucket: 'safe_to_delete',
+            confidence: 'high',
+            reason: retryResponse.status === 404 ? '页面不存在' : '页面已永久删除',
+            detail: `重试后确认，HTTP ${retryResponse.status}`,
+            statusCode: retryResponse.status
+          };
+        }
+      } catch (_retryError) {
+        // 重试后仍失败，则继续走保守归类
+      }
+    }
+
     const normalized = normalizeDetectionError(error);
     const dnsStatus = await checkDnsStatus(parsedUrl.hostname);
     const bucket = normalized.bucket === 'safe_to_delete' || dnsStatus.status === 'nxdomain'
