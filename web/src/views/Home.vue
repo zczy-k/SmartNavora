@@ -1100,13 +1100,20 @@ watch(searchQuery, (value) => {
   }
 
   searchDebounceTimer = setTimeout(() => {
-    debouncedSearchQuery.value = value.trim();
+    const keyword = value.trim();
+    debouncedSearchQuery.value = keyword;
+    if (keyword && allCards.value.length === 0) {
+      loadAllCardsForSearch().catch((e) => {
+        console.error('加载全站搜索卡片失败:', e);
+      });
+    }
   }, 120);
 }, { immediate: true });
 
 // 排序和过滤后的卡片
 const sortedFilteredCards = computed(() => {
-  return applySorting(filterCardsByActiveCriteria(cards.value));
+  const sourceCards = debouncedSearchQuery.value ? allCards.value : cards.value;
+  return applySorting(filterCardsByActiveCriteria(sourceCards));
 });
 
 // 应用排序逻辑
@@ -1905,9 +1912,9 @@ onMounted(async () => {
       cacheData.cards = cards.value;
       deferredSearchTimer = setTimeout(() => {
         if (document.visibilityState === 'visible') {
-          loadAllCardsForSearch();
+          loadAllCardsForSearch().catch(() => {});
         }
-      }, 3000);
+      }, 300);
     }
   }
   deferredDataTimer = setTimeout(() => {
