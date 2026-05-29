@@ -81,13 +81,6 @@
                       </button>
                       <button v-if="engine.custom" @click.stop="deleteCustomEngine(engine)" class="delete-engine-btn-small" title="删除">×</button>
             </div>
-            <button v-if="cloudNeedsSync" class="toolbar-icon-btn cloud-sync-warning" @click="showBackupSyncModal = true" title="云端备份落后于本地数据，点击同步">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
-                <line x1="12" y1="9" x2="12" y2="15"/>
-                <line x1="9" y1="12" x2="15" y2="12"/>
-              </svg>
-            </button>
           </div>
         </div>
       </div>
@@ -111,6 +104,13 @@
         </div>
         
         <div class="toolbar-actions">
+          <button v-if="cloudNeedsSync" class="toolbar-icon-btn cloud-sync-warning" @click="showBackupSyncModal = true" title="云端备份落后于本地数据，点击同步">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+              <line x1="12" y1="9" x2="12" y2="15"/>
+              <line x1="9" y1="12" x2="15" y2="12"/>
+            </svg>
+          </button>
           <button v-if="allTags.length > 0" class="toolbar-icon-btn" :class="{ active: selectedTagIds.length > 0 }" @click="showTagPanel = !showTagPanel" title="标签筛选">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
@@ -3432,11 +3432,14 @@ function closePasswordModal() {
 // 版本检测
 async function checkCloudVersion() {
   try {
+    if (!hasLocalToken()) {
+      await tryRestoreAuthFromSavedPassword();
+    }
     const res = await checkWebdavVersion();
     const data = res.data || {};
     cloudNeedsSync.value = data.needsSync === true;
   } catch (e) {
-    // 忽略版本检测失败
+    cloudNeedsSync.value = false;
   }
 }
 
