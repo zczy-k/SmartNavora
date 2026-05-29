@@ -15,6 +15,17 @@
       </div>
     </div>
 
+    <div v-if="extensionAvailable === false" class="extension-guide-banner">
+      <div>
+        <strong>此功能依赖 SmartNavora 浏览器扩展</strong>
+        <p>当前未检测到扩展，失效链接治理无法执行。请先安装并启用扩展，再进行检测。</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" @click="showExtensionGuide = true">查看安装指引</button>
+        <button class="btn btn-primary" @click="refreshExtensionAvailability">重新检测扩展</button>
+      </div>
+    </div>
+
     <div v-if="summary" class="summary-grid">
       <div class="summary-card">
         <div class="summary-label">总卡片数</div>
@@ -261,11 +272,34 @@
     </div>
 
     <p v-if="errorMsg" class="error-msg">{{ errorMsg }}</p>
+
+    <div v-if="showExtensionGuide" class="modal-overlay" @click.self="showExtensionGuide = false">
+      <div class="guide-modal">
+        <div class="guide-modal-header">
+          <h4>安装 SmartNavora 浏览器扩展</h4>
+          <button class="guide-close" @click="showExtensionGuide = false">×</button>
+        </div>
+        <div class="guide-modal-body">
+          <p>失效链接治理使用浏览器扩展在本机侧执行检测，因此必须先安装并启用扩展。</p>
+          <ol class="guide-steps">
+            <li>打开项目中的 `browser-extension/` 目录。</li>
+            <li>在 Chrome/Edge 打开扩展管理页，并开启“开发者模式”。</li>
+            <li>点击“加载已解压的扩展程序”，选择 `browser-extension/` 目录。</li>
+            <li>安装完成后，返回本页面点击“重新检测扩展”。</li>
+          </ol>
+          <p class="guide-tip">如果你已经安装过扩展，请确认它仍处于启用状态，并且已更新到最新代码。</p>
+        </div>
+        <div class="guide-modal-actions">
+          <button class="btn btn-secondary" @click="showExtensionGuide = false">关闭</button>
+          <button class="btn btn-primary" @click="refreshExtensionAvailability">重新检测扩展</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { getAllCards, removeManyCards } from '../../api';
 
 const detecting = ref(false);
@@ -286,6 +320,8 @@ const selectedManualIds = ref([]);
 const detectProgressText = ref('');
 const detectProgressPercent = ref(0);
 const viewOnlyUnreachable = ref(false);
+const extensionAvailable = ref(null);
+const showExtensionGuide = ref(false);
 
 function isPrivateHostname(hostname) {
   const value = (hostname || '').toLowerCase();
@@ -498,6 +534,13 @@ async function isExtensionAvailable() {
   }
 }
 
+async function refreshExtensionAvailability() {
+  extensionAvailable.value = await isExtensionAvailable();
+  if (extensionAvailable.value) {
+    showExtensionGuide.value = false;
+  }
+}
+
 async function collectDetectionResultsViaExtension(cards, progressPrefix = '正在检测') {
   const mergedSafe = [];
   const mergedMaybe = [];
@@ -661,6 +704,12 @@ async function handleDetectInvalidLinks() {
   detectProgressText.value = '正在获取卡片列表...';
   detectProgressPercent.value = 0;
   try {
+    await refreshExtensionAvailability();
+    if (!extensionAvailable.value) {
+      showExtensionGuide.value = true;
+      return;
+    }
+
     const cardsRes = await getAllCards(true);
     const allCards = Object.values(cardsRes.data?.cardsByCategory || {}).flat().filter(Boolean);
 
@@ -716,6 +765,12 @@ async function recheckSelected(group) {
   errorMsg.value = '';
   detectProgressPercent.value = 0;
   try {
+    await refreshExtensionAvailability();
+    if (!extensionAvailable.value) {
+      showExtensionGuide.value = true;
+      return;
+    }
+
     const cardsToRecheck = source.filter(item => selectedIds.includes(item.id));
     const data = await collectDetectionResults(cardsToRecheck, '正在复检');
     mergeRecheckResults(data, selectedIds);
@@ -749,6 +804,10 @@ async function removeAllUnreachableItems() {
   const ids = unreachableItems.value.map(item => item.id);
   await removeCards(ids, `确定要一键删除全部 ${ids.length} 张“真正无法连接”卡片吗？此操作不可撤销。`);
 }
+
+onMounted(() => {
+  refreshExtensionAvailability();
+});
 </script>
 
 <style scoped>
@@ -774,6 +833,23 @@ async function removeAllUnreachableItems() {
 .page-desc {
   color: #6b7280;
   margin-top: 6px;
+}
+
+.extension-guide-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 18px;
+}
+
+.extension-guide-banner p {
+  margin: 6px 0 0;
+  color: #9a3412;
 }
 
 .summary-grid {
@@ -854,6 +930,75 @@ async function removeAllUnreachableItems() {
   border-radius: 999px;
   background: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
   transition: width 0.25s ease;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.guide-modal {
+  width: min(560px, calc(100vw - 24px));
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.25);
+  overflow: hidden;
+}
+
+.guide-modal-header,
+.guide-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.guide-modal-header {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.guide-modal-header h4 {
+  margin: 0;
+}
+
+.guide-close {
+  border: none;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+.guide-modal-body {
+  padding: 18px;
+  color: #374151;
+}
+
+.guide-steps {
+  margin: 12px 0;
+  padding-left: 20px;
+}
+
+.guide-steps li {
+  margin-bottom: 8px;
+}
+
+.guide-tip {
+  color: #6b7280;
+  font-size: 13px;
+  margin-top: 12px;
+}
+
+.guide-modal-actions {
+  border-top: 1px solid #e5e7eb;
+  justify-content: flex-end;
 }
 
 .result-section {
