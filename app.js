@@ -246,7 +246,14 @@ console.log(`✓ Using static files from: ${staticDir}`);
 app.use(express.static(staticDir, {
   maxAge: '1d',
   etag: true,
-  lastModified: true
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (/\.html?$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
 }));
 
 // SPA Fallback - 为 Vue Router 的 history 模式提供支持
@@ -258,6 +265,9 @@ app.use((req, res, next) => {
     !req.path.match(/\.(js|css|png|jpg|jpeg|gif|svg|webp|ico|woff|woff2|ttf|eot|json|txt)$/i)
   ) {
     // 返回 index.html，让 Vue Router 处理路由
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.sendFile(path.join(staticDir, 'index.html'));
   } else {
     next();
