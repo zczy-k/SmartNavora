@@ -1290,6 +1290,23 @@
                       font-weight: 500;
                       flex: 1;
                   }
+                  .confirm-title-input {
+                      background: #fff;
+                      border: 1px solid #e2e5e8;
+                      border-radius: 6px;
+                      outline: none;
+                      flex: 1;
+                      padding: 4px 8px;
+                      font-size: 13px;
+                      font-weight: 500;
+                      color: #333;
+                      font-family: inherit;
+                      min-width: 0;
+                  }
+                  .confirm-title-input:focus {
+                      border-color: #667eea;
+                      box-shadow: 0 0 0 2px rgba(102,126,234,0.15);
+                  }
                   .confirm-category-path {
                       color: #667eea;
                       display: flex;
@@ -1413,7 +1430,7 @@
                               <div class="confirm-info-box">
                                   <div class="confirm-row">
                                       <span class="confirm-label">标题：</span>
-                                      <span class="confirm-value" id="confirmTitleText"></span>
+                                       <input type="text" class="confirm-value confirm-title-input" id="confirmTitleText">
                                   </div>
                                   <div class="confirm-row">
                                       <span class="confirm-label">分类：</span>
@@ -1571,6 +1588,16 @@
             renderCategories(allMenus);
         });
         
+          // 双向同步标题：确认区 ↔ 更多选项
+          const confirmTitleInput = dialogShadowRoot.getElementById('confirmTitleText');
+          const customTitleInput = dialogShadowRoot.getElementById('customTitle');
+          confirmTitleInput.addEventListener('input', () => {
+              customTitleInput.value = confirmTitleInput.value;
+          });
+          customTitleInput.addEventListener('input', () => {
+              confirmTitleInput.value = customTitleInput.value;
+          });
+          
           // 提交按钮
           submitBtn.addEventListener('click', () => {
               if (currentStep === 'selection') {
@@ -1625,7 +1652,7 @@
                       if (subMenu) categoryPath += ' / ' + subMenu.name;
                   }
                   
-                  dialogShadowRoot.getElementById('confirmTitleText').textContent = customTitle;
+                  dialogShadowRoot.getElementById('confirmTitleText').value = customTitle;
                   dialogShadowRoot.getElementById('confirmCategoryText').textContent = categoryPath;
                   dialogShadowRoot.getElementById('confirmUrlText').textContent = url;
                   checkDuplicateForConfirmation(url, customTitle);
