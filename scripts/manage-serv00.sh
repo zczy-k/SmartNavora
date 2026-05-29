@@ -122,16 +122,22 @@ deploy_app() {
 
         [ -d "database" ] && mv "database" "database.backup"
         [ -d "data" ] && mv "data" "data.backup"
+        [ -d "config" ] && mv "config" "config.backup"
+        [ -d "uploads" ] && mv "uploads" "uploads.backup"
+        [ -d "backups" ] && mv "backups" "backups.backup"
         [ -f ".env" ] && mv ".env" ".env.backup"
 
         rm -rf "public"
-        find . -mindepth 1 -maxdepth 1 ! -name 'database.backup' ! -name 'data.backup' ! -name '.env.backup' ! -name 'node_modules' ! -name 'SmartNavora-main' ! -name 'SmartNavora.zip' -exec rm -rf {} + 2>/dev/null || true
+        find . -mindepth 1 -maxdepth 1 ! -name 'database.backup' ! -name 'data.backup' ! -name 'config.backup' ! -name 'uploads.backup' ! -name 'backups.backup' ! -name '.env.backup' ! -name 'node_modules' ! -name 'SmartNavora-main' ! -name 'SmartNavora.zip' -exec rm -rf {} + 2>/dev/null || true
 
         cp -r SmartNavora-main/* ./
         rm -rf SmartNavora-main "SmartNavora.zip"
         
         [ -d "database.backup" ] && rm -rf "database" && mv "database.backup" "database"
         [ -d "data.backup" ] && mv "data.backup" "data"
+        [ -d "config.backup" ] && rm -rf "config" && mv "config.backup" "config"
+        [ -d "uploads.backup" ] && rm -rf "uploads" && mv "uploads.backup" "uploads"
+        [ -d "backups.backup" ] && rm -rf "backups" && mv "backups.backup" "backups"
         [ -f ".env.backup" ] && mv ".env.backup" ".env"
     else
         red "错误: 项目解压失败，未找到 SmartNavora-main 目录"
