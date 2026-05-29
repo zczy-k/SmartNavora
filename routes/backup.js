@@ -1403,7 +1403,7 @@ router.get('/webdav/list', authMiddleware, async (req, res) => {
 });
 
 // 对比本地数据版本与云端版本
-router.get('/webdav/version-check', authMiddleware, async (req, res) => {
+router.get('/webdav/version-check', async (req, res) => {
   try {
     const db = require('../db');
     const { getWebDAVClient } = require('../utils/autoBackup');

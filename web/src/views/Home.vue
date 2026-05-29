@@ -3441,16 +3441,6 @@ function closePasswordModal() {
 // 版本检测
 async function checkCloudVersion() {
   try {
-    if (!hasLocalToken()) {
-      const restored = await tryRestoreAuthFromSavedPassword();
-      if (!restored) {
-        cloudNeedsSync.value = false;
-        cloudSyncStatus.value = 'auth_required';
-        cloudLocalVersion.value = null;
-        cloudRemoteVersion.value = null;
-        return;
-      }
-    }
     const res = await checkWebdavVersion();
     const data = res.data || {};
     cloudSyncStatus.value = data.status || 'unknown';
@@ -3484,9 +3474,6 @@ const cloudSyncIndicatorTitle = computed(() => {
   if (cloudSyncStatus.value === 'not_configured') {
     return '尚未配置 WebDAV';
   }
-  if (cloudSyncStatus.value === 'auth_required') {
-    return '需要管理权限才能检测云端备份状态';
-  }
   if (cloudSyncStatus.value === 'cloud_ahead') {
     return `云端版本高于本地（本地 ${cloudLocalVersion.value ?? '-'} / 云端 ${cloudRemoteVersion.value ?? '-'}）`;
   }
@@ -3504,10 +3491,6 @@ function handleCloudStatusClick() {
   }
   if (cloudSyncStatus.value === 'not_configured') {
     showToastMessage('请先在后台配置 WebDAV', 'info');
-    return;
-  }
-  if (cloudSyncStatus.value === 'auth_required') {
-    showToastMessage('请先进行一次管理密码验证，之后才能检测云端备份状态', 'info', 3500);
     return;
   }
   if (cloudSyncStatus.value === 'cloud_ahead') {
