@@ -1968,8 +1968,30 @@ router.delete('/webdav/delete/:filename', authMiddleware, async (req, res) => {
       httpsAgent
     });
     
-    const remotePath = `/SmartNavora-Backups/${filename}`;
-    await client.deleteFile(remotePath);
+    const remoteCandidates = [
+      `/SmartNavora-Backups/${filename}`,
+      `/Con-Nav-Item-Backups/${filename}`
+    ];
+    
+    let deleted = false;
+    for (const remotePath of remoteCandidates) {
+      try {
+        await client.deleteFile(remotePath);
+        deleted = true;
+        break;
+      } catch (error) {
+        if (error.status !== 404) {
+          throw error;
+        }
+      }
+    }
+    
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: '未找到指定的 WebDAV 备份文件'
+      });
+    }
     
     res.json({ 
       success: true, 
