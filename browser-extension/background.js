@@ -44,6 +44,124 @@ function clearTokenVerifyCache() {
         result: null
     };
 }
+
+function isAccessibleStatus(status) {
+    return status >= 200 && status < 400;
+}
+
+function isRetryableStatus(status) {
+    return status === 408 || status === 425 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function checkUrlFromExtension(card) {
+    const id = card.id;
+    const title = card.title || '未命名卡片';
+    const url = card.url;
+    const menuName = card.menu_name || card.menuName || '未分类';
+    const subMenuName = card.sub_menu_name || card.subMenuName || '';
+
+    let parsedUrl;
+    try {
+        parsedUrl = new URL(url);
+    } catch {
+        return { id, title, url, menuName, subMenuName, bucket: 'skipped', reason: '链接格式无效', detail: '无法解析为有效 URL', statusCode: null };
+    }
+
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        return { id, title, url, menuName, subMenuName, bucket: 'skipped', reason: '非 HTTP 链接', detail: parsedUrl.protocol, statusCode: null };
+    }
+
+    const tryFetch = async (method) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        try {
+            return await fetch(url, {
+                method,
+                redirect: 'follow',
+                cache: 'no-store',
+                signal: controller.signal
+            });
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    };
+
+    try {
+        let response;
+        try {
+            response = await tryFetch('HEAD');
+        } catch (error) {
+            if (error.name === 'AbortError') throw error;
+            response = await tryFetch('GET');
+        }
+
+        const status = response.status;
+        if (isAccessibleStatus(status)) {
+            return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '访问正常', detail: `HTTP ${status}`, statusCode: status };
+        }
+        if (status === 404 || status === 410) {
+            return { id, title, url, menuName, subMenuName, bucket: 'safe_to_delete', reason: status === 404 ? '页面不存在' : '页面已永久删除', detail: `HTTP ${status}`, statusCode: status };
+        }
+
+        if (isRetryableStatus(status)) {
+            await delay(600);
+            try {
+                const retryResponse = await tryFetch('GET');
+                const rs = retryResponse.status;
+                if (isAccessibleStatus(rs)) {
+                    return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '访问正常', detail: `重试后恢复，HTTP ${rs}`, statusCode: rs };
+                }
+                if (rs === 404 || rs === 410) {
+                    return { id, title, url, menuName, subMenuName, bucket: 'safe_to_delete', reason: rs === 404 ? '页面不存在' : '页面已永久删除', detail: `重试后确认，HTTP ${rs}`, statusCode: rs };
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: '连接超时', detail: '15秒内未响应', statusCode: null };
+                }
+            }
+        }
+
+        return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: `HTTP ${status}`, detail: '服务器返回错误状态码', statusCode: status };
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: '连接超时', detail: '15秒内未响应', statusCode: null };
+        }
+        return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: '无法连接', detail: error.message || '网络错误', statusCode: null };
+    }
+}
+
+async function scanInvalidLinksFromExtension(cards, concurrency = 8) {
+    const mergedSafe = [];
+    const mergedMaybe = [];
+    const mergedSkipped = [];
+    let cursor = 0;
+
+    async function worker() {
+        while (cursor < cards.length) {
+            const currentIndex = cursor;
+            cursor += 1;
+            const result = await checkUrlFromExtension(cards[currentIndex]);
+            if (result.bucket === 'safe_to_delete') mergedSafe.push(result);
+            else if (result.bucket === 'maybe_invalid') mergedMaybe.push(result);
+            else if (result.bucket === 'skipped') mergedSkipped.push(result);
+        }
+    }
+
+    const workerCount = Math.min(Math.max(Number(concurrency) || 8, 1), cards.length || 1);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+    return {
+        scannedAt: new Date().toISOString(),
+        total: cards.length,
+        safeToDelete: mergedSafe.sort((a, b) => b.id - a.id),
+        maybeInvalid: mergedMaybe.sort((a, b) => b.id - a.id),
+        skipped: mergedSkipped.sort((a, b) => b.id - a.id)
+    };
+}
 const FORCE_REFRESH_WINDOW = 60 * 1000; // 1分钟
 
 function canForceRefresh() {
@@ -1057,6 +1175,18 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
             }
         })();
         return true; // 保持消息通道开放，等待异步响应
+    }
+
+    if (request.action === 'scanInvalidLinks') {
+        (async () => {
+            try {
+                const result = await scanInvalidLinksFromExtension(request.cards || [], request.concurrency || 8);
+                sendResponse({ success: true, ...result });
+            } catch (e) {
+                sendResponse({ success: false, error: e.message });
+            }
+        })();
+        return true;
     }
     
     if (request.action === 'getConfig') {

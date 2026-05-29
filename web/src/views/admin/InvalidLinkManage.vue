@@ -320,6 +320,7 @@ const formattedScannedAt = computed(() => {
 
 const allSafeSelected = computed(() => safeToDelete.value.length > 0 && selectedSafeIds.value.length === safeToDelete.value.length);
 const allMaybeSelected = computed(() => maybeInvalid.value.length > 0 && selectedMaybeIds.value.length === maybeInvalid.value.length);
+let extensionRequestSeed = 0;
 
 function formatCategory(item) {
   return item.subMenuName ? `${item.menuName} / ${item.subMenuName}` : item.menuName;
@@ -327,6 +328,82 @@ function formatCategory(item) {
 
 function openLink(url) {
   window.open(url, '_blank', 'noopener');
+}
+
+function createExtensionRequestId(prefix) {
+  extensionRequestSeed += 1;
+  return `${prefix}-${Date.now()}-${extensionRequestSeed}`;
+}
+
+function waitForExtensionMessage(expectedType, requestId, timeout = 3000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', onMessage);
+      reject(new Error('扩展响应超时'));
+    }, timeout);
+
+    function onMessage(event) {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (!data || data.source !== 'smartnavora-extension') return;
+      if (data.type !== expectedType || data.requestId !== requestId) return;
+      clearTimeout(timer);
+      window.removeEventListener('message', onMessage);
+      resolve(data);
+    }
+
+    window.addEventListener('message', onMessage);
+  });
+}
+
+async function isExtensionAvailable() {
+  const requestId = createExtensionRequestId('handshake');
+  const pending = waitForExtensionMessage('smartnavora-invalid-link-handshake-result', requestId, 1200);
+  window.postMessage({
+    source: 'smartnavora-page',
+    type: 'smartnavora-invalid-link-handshake',
+    requestId
+  }, '*');
+
+  try {
+    const result = await pending;
+    return result.available === true;
+  } catch {
+    return false;
+  }
+}
+
+async function collectDetectionResultsViaExtension(cards, progressPrefix = '正在检测') {
+  detectProgressText.value = `${progressPrefix}，正在调用扩展检测...`;
+
+  const available = await isExtensionAvailable();
+  if (!available) {
+    throw new Error('未检测到浏览器扩展，请安装并启用 SmartNavora 扩展后再进行失效链接检测');
+  }
+
+  const requestId = createExtensionRequestId('scan');
+  const pending = waitForExtensionMessage('smartnavora-invalid-link-scan-result', requestId, 10 * 60 * 1000);
+
+  window.postMessage({
+    source: 'smartnavora-page',
+    type: 'smartnavora-invalid-link-scan-request',
+    requestId,
+    concurrency: 8,
+    cards
+  }, '*');
+
+  const result = await pending;
+  if (!result.response?.success) {
+    throw new Error(result.response?.error || '扩展检测失败');
+  }
+
+  return {
+    scannedAt: result.response.scannedAt,
+    total: result.response.total,
+    safeToDelete: result.response.safeToDelete || [],
+    maybeInvalid: result.response.maybeInvalid || [],
+    skipped: result.response.skipped || []
+  };
 }
 
 function toggleSelectAll(group) {
@@ -363,37 +440,7 @@ function applyDetectionSnapshot(data) {
 }
 
 async function collectDetectionResults(cards, progressPrefix = '正在检测') {
-  const mergedSafe = [];
-  const mergedMaybe = [];
-  const mergedSkipped = [];
-  let completed = 0;
-  let cursor = 0;
-
-  async function worker() {
-    while (cursor < cards.length) {
-      const currentIndex = cursor;
-      cursor += 1;
-
-      const result = await checkUrlFromBrowser(cards[currentIndex]);
-      completed += 1;
-      detectProgressText.value = `${progressPrefix} ${completed}/${cards.length}...`;
-
-      if (result.bucket === 'safe_to_delete') mergedSafe.push(result);
-      else if (result.bucket === 'maybe_invalid') mergedMaybe.push(result);
-      else if (result.bucket === 'skipped') mergedSkipped.push(result);
-    }
-  }
-
-  const workerCount = Math.min(DETECT_CONCURRENCY, cards.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-
-  return {
-    scannedAt: new Date().toISOString(),
-    total: cards.length,
-    safeToDelete: mergedSafe.sort((a, b) => b.id - a.id),
-    maybeInvalid: mergedMaybe.sort((a, b) => b.id - a.id),
-    skipped: mergedSkipped.sort((a, b) => b.id - a.id)
-  };
+  return await collectDetectionResultsViaExtension(cards, progressPrefix);
 }
 
 function removeDetectedItemsLocally(cardIds) {

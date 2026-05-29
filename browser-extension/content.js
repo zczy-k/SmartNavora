@@ -2884,6 +2884,48 @@ if (response.success) {
         return div.innerHTML;
     }
     
+    async function handleInvalidLinkScanRequest(requestId, cards, concurrency) {
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'scanInvalidLinks',
+                cards: Array.isArray(cards) ? cards : [],
+                concurrency: concurrency || 8
+            });
+
+            window.postMessage({
+                source: 'smartnavora-extension',
+                type: 'smartnavora-invalid-link-scan-result',
+                requestId,
+                response
+            }, '*');
+        } catch (error) {
+            window.postMessage({
+                source: 'smartnavora-extension',
+                type: 'smartnavora-invalid-link-scan-result',
+                requestId,
+                response: { success: false, error: error.message || '扩展检测失败' }
+            }, '*');
+        }
+    }
+
+    window.addEventListener('message', (event) => {
+        if (event.source !== window || !event.data || event.data.source !== 'smartnavora-page') return;
+
+        if (event.data.type === 'smartnavora-invalid-link-handshake') {
+            window.postMessage({
+                source: 'smartnavora-extension',
+                type: 'smartnavora-invalid-link-handshake-result',
+                requestId: event.data.requestId,
+                available: true
+            }, '*');
+            return;
+        }
+
+        if (event.data.type === 'smartnavora-invalid-link-scan-request') {
+            handleInvalidLinkScanRequest(event.data.requestId, event.data.cards, event.data.concurrency);
+        }
+    });
+
     // 监听来自 background.js 的消息（打开快捷添加弹窗）
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.type === 'openQuickAddDialog') {
