@@ -53,6 +53,10 @@ function isRetryableStatus(status) {
     return status === 408 || status === 425 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
 }
 
+function isManualReviewStatus(status) {
+    return [401, 403, 405, 406, 409, 421, 451, 468].includes(status);
+}
+
 function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -135,6 +139,23 @@ async function checkUrlFromExtension(card) {
         }
     };
 
+    const tryFetchHttpRoot = async () => {
+        if (parsedUrl.protocol !== 'https:') return null;
+        const httpUrl = `http://${parsedUrl.host}/`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        try {
+            return await fetch(httpUrl, {
+                method: 'GET',
+                redirect: 'follow',
+                cache: 'no-store',
+                signal: controller.signal
+            });
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    };
+
     try {
         let response;
         let usedHead = true;
@@ -204,6 +225,10 @@ async function checkUrlFromExtension(card) {
             }
         }
 
+        if (isManualReviewStatus(status)) {
+            return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'manual_review', reason: `HTTP ${status}`, detail: '站点返回了登录/拦截/自定义保护状态，建议人工确认', statusCode: status };
+        }
+
         try {
             const rootResponse = await tryFetchRoot();
             const rootBody = await readResponseTextSafe(rootResponse.clone());
@@ -214,6 +239,10 @@ async function checkUrlFromExtension(card) {
 
             if (isAccessibleStatus(rootResponse.status)) {
                 return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'manual_review', reason: `HTTP ${status}`, detail: `站点根路径可访问（HTTP ${rootResponse.status}），但当前链接异常，建议人工验证`, statusCode: status };
+            }
+
+            if (isManualReviewStatus(rootResponse.status)) {
+                return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'manual_review', reason: `HTTP ${status}`, detail: `站点根路径返回保护/登录状态（HTTP ${rootResponse.status}），建议人工验证`, statusCode: status };
             }
 
             return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: `HTTP ${status}`, detail: `站点根路径也异常（HTTP ${rootResponse.status}）`, statusCode: status };
@@ -228,7 +257,22 @@ async function checkUrlFromExtension(card) {
         if (error.name === 'AbortError') {
             return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: '连接超时', detail: '15秒内未响应', statusCode: null };
         }
-        return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: '无法连接', detail: error.message || '网络错误', statusCode: null };
+
+        try {
+            const httpRootResponse = await tryFetchHttpRoot();
+            if (httpRootResponse) {
+                return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'manual_review', reason: 'HTTPS 异常', detail: `HTTPS 访问失败，但 HTTP 根路径返回了 ${httpRootResponse.status}，可能是证书或握手问题`, statusCode: httpRootResponse.status };
+            }
+        } catch {
+            // ignore
+        }
+
+        const message = error.message || '网络错误';
+        if (parsedUrl.protocol === 'https:' && /failed to fetch|networkerror|load failed/i.test(message)) {
+            return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'manual_review', reason: 'HTTPS 异常', detail: '浏览器/扩展无法完成 HTTPS 握手，可能是证书、TLS 或安全拦截问题，建议人工确认', statusCode: null };
+        }
+
+        return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: '无法连接', detail: message, statusCode: null };
     }
 }
 
