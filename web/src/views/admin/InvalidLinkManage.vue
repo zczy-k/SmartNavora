@@ -5,9 +5,14 @@
         <h3>失效链接治理</h3>
         <p class="page-desc">扫描全部卡片链接，优先清理明确失效的站点，并把 Cloudflare 验证、真正无法连接、仍需人工确认的链接分开列出。</p>
       </div>
-      <button @click="handleDetectInvalidLinks" class="btn btn-primary" :disabled="detecting || removing">
-        {{ detecting ? (detectProgressText || '检测中...') : '🔗 一键检测失效链接' }}
-      </button>
+      <div class="top-actions">
+        <button @click="viewOnlyUnreachable = !viewOnlyUnreachable" class="btn btn-secondary">
+          {{ viewOnlyUnreachable ? '显示全部结果' : '仅查看真正断链' }}
+        </button>
+        <button @click="handleDetectInvalidLinks" class="btn btn-primary" :disabled="detecting || removing">
+          {{ detecting ? (detectProgressText || '检测中...') : '🔗 一键检测失效链接' }}
+        </button>
+      </div>
     </div>
 
     <div v-if="summary" class="summary-grid">
@@ -53,7 +58,7 @@
       </div>
     </div>
 
-    <div v-if="safeToDelete.length > 0" class="result-section danger-section">
+    <div v-if="!viewOnlyUnreachable && safeToDelete.length > 0" class="result-section danger-section">
       <div class="result-header">
         <div>
           <h4>确定失效</h4>
@@ -100,7 +105,7 @@
       </div>
     </div>
 
-    <div v-if="cloudflareProtected.length > 0" class="result-section warning-section">
+    <div v-if="!viewOnlyUnreachable && cloudflareProtected.length > 0" class="result-section warning-section">
       <div class="result-header">
         <div>
           <h4>Cloudflare 人机验证</h4>
@@ -160,6 +165,9 @@
           <button class="btn btn-danger" :disabled="removing || selectedUnreachableIds.length === 0" @click="removeSelected('unreachable')">
             {{ removing ? '删除中...' : `删除已选 (${selectedUnreachableIds.length})` }}
           </button>
+          <button class="btn btn-danger" :disabled="removing || unreachableItems.length === 0" @click="removeAllUnreachableItems">
+            {{ removing ? '删除中...' : `一键删除全部真正断链 (${unreachableItems.length})` }}
+          </button>
         </div>
       </div>
 
@@ -188,7 +196,7 @@
       </div>
     </div>
 
-    <div v-if="manualReviewItems.length > 0" class="result-section warning-section">
+    <div v-if="!viewOnlyUnreachable && manualReviewItems.length > 0" class="result-section warning-section">
       <div class="result-header">
         <div>
           <h4>仍需人工确认</h4>
@@ -237,6 +245,11 @@
       <p>当前卡片链接整体状态正常。</p>
     </div>
 
+    <div v-else-if="detected && viewOnlyUnreachable && unreachableItems.length === 0" class="empty-state success-state">
+      <h3>没有真正断链</h3>
+      <p>当前检测结果中，没有识别出“真正无法连接”的卡片。</p>
+    </div>
+
     <div v-else-if="!detected" class="empty-state initial-state">
       <h3>点击“一键检测失效链接”开始扫描</h3>
       <p>系统会自动执行多轮检测，并将结果分为“确定失效”、“Cloudflare 验证”、“真正无法连接”和“仍需人工确认”。</p>
@@ -272,6 +285,7 @@ const selectedUnreachableIds = ref([]);
 const selectedManualIds = ref([]);
 const detectProgressText = ref('');
 const detectProgressPercent = ref(0);
+const viewOnlyUnreachable = ref(false);
 
 function isPrivateHostname(hostname) {
   const value = (hostname || '').toLowerCase();
@@ -730,6 +744,11 @@ async function removeAllSafeToDelete() {
   const ids = safeToDelete.value.map(item => item.id);
   await removeCards(ids, `确定要一键删除全部 ${ids.length} 张“确定失效”卡片吗？此操作不可撤销。`);
 }
+
+async function removeAllUnreachableItems() {
+  const ids = unreachableItems.value.map(item => item.id);
+  await removeCards(ids, `确定要一键删除全部 ${ids.length} 张“真正无法连接”卡片吗？此操作不可撤销。`);
+}
 </script>
 
 <style scoped>
@@ -743,6 +762,13 @@ async function removeAllSafeToDelete() {
   align-items: center;
   gap: 16px;
   margin-bottom: 24px;
+}
+
+.top-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .page-desc {
