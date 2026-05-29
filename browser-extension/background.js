@@ -147,7 +147,7 @@ async function checkUrlFromExtension(card) {
         try {
             return await fetch(httpUrl, {
                 method: 'GET',
-                redirect: 'follow',
+                redirect: 'manual',
                 cache: 'no-store',
                 signal: controller.signal
             });
@@ -261,6 +261,10 @@ async function checkUrlFromExtension(card) {
         try {
             const httpRootResponse = await tryFetchHttpRoot();
             if (httpRootResponse) {
+                const location = httpRootResponse.headers.get('location') || '';
+                if ((httpRootResponse.status === 301 || httpRootResponse.status === 302 || httpRootResponse.status === 307 || httpRootResponse.status === 308) && /^https:/i.test(location)) {
+                    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'manual_review', reason: '证书/TLS 异常', detail: `HTTP 可正常跳转到 HTTPS（${httpRootResponse.status} -> ${location}），但 HTTPS 握手失败，可能是证书过期或 TLS 配置异常`, statusCode: httpRootResponse.status };
+                }
                 return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'manual_review', reason: 'HTTPS 异常', detail: `HTTPS 访问失败，但 HTTP 根路径返回了 ${httpRootResponse.status}，可能是证书或握手问题`, statusCode: httpRootResponse.status };
             }
         } catch {
