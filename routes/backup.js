@@ -1270,6 +1270,31 @@ router.post('/webdav/backup', authMiddleware, async (req, res) => {
     const remoteFilePath = `${remotePath}/${backupName}`;
     await client.putFileContents(remoteFilePath, fileBuffer);
     
+    // 写入云端版本元信息
+    try {
+      const { writeWebDAVMeta } = require('../utils/autoBackup');
+      await writeWebDAVMeta(client, remotePath);
+    } catch (e) {
+      // 版本元信息写入失败，忽略
+    }
+    
+    // 清理云端旧备份，保留6个最新的
+    try {
+      const { getWebDAVClient: getClient } = require('../utils/autoBackup');
+      const webdavClient = await getClient();
+      if (webdavClient) {
+        const backupFiles = await webdavClient.getDirectoryContents(remotePath);
+        const zips = backupFiles
+          .filter(f => f.type === 'file' && f.filename.endsWith('.zip'))
+          .sort((a, b) => new Date(b.lastmod) - new Date(a.lastmod));
+        for (let i = 6; i < zips.length; i++) {
+          try { await webdavClient.deleteFile(zips[i].filename); } catch (e) { /* ignore */ }
+        }
+      }
+    } catch (e) {
+      // 清理失败，忽略
+    }
+    
     const stats = fs.statSync(backupPath);
     const sizeInMB = (stats.size / (1024 * 1024)).toFixed(2);
     
@@ -1374,6 +1399,34 @@ router.get('/webdav/list', authMiddleware, async (req, res) => {
       message: '获取WebDAV备份列表失败', 
       error: error.message 
     });
+  }
+});
+
+// 对比本地数据版本与云端版本
+router.get('/webdav/version-check', authMiddleware, async (req, res) => {
+  try {
+    const db = require('../db');
+    const { getWebDAVClient } = require('../utils/autoBackup');
+
+    const localVersion = await db.getDataVersion();
+    const client = await getWebDAVClient();
+
+    if (!client) {
+      return res.json({ success: true, needsSync: false, localVersion, cloudVersion: null, reason: 'webdav_not_configured' });
+    }
+
+    try {
+      const metaContent = await client.getFileContents('/SmartNavora-Backups/_latest-version.json', { format: 'text' });
+      const meta = JSON.parse(metaContent);
+      const cloudVersion = meta.dataVersion || 0;
+
+      return res.json({ success: true, needsSync: localVersion > cloudVersion, localVersion, cloudVersion });
+    } catch (e) {
+      return res.json({ success: true, needsSync: false, localVersion, cloudVersion: null, reason: 'no_cloud_version' });
+    }
+  } catch (error) {
+    console.error('版本对比失败:', error);
+    res.status(500).json({ success: false, message: '版本对比失败', error: error.message });
   }
 });
 

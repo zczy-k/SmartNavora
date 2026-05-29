@@ -80,10 +80,17 @@
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
                       </button>
                       <button v-if="engine.custom" @click.stop="deleteCustomEngine(engine)" class="delete-engine-btn-small" title="删除">×</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            </div>
+            <button v-if="cloudNeedsSync" class="toolbar-icon-btn cloud-sync-warning" @click="showBackupSyncModal = true" title="云端备份落后于本地数据，点击同步">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
+                <line x1="12" y1="9" x2="12" y2="15"/>
+                <line x1="9" y1="12" x2="15" y2="12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
             </transition>
           </div>
           <input 
@@ -996,12 +1003,44 @@
         </div>
       </div>
     </transition>
+
+    <!-- 云端版本落后提醒弹窗 -->
+    <div v-if="showBackupSyncModal" class="modal-overlay" @click.self="showBackupSyncModal = false">
+      <div class="modal-content" @click.stop style="max-width: 420px;">
+        <div class="modal-header">
+          <h3>同步云备份</h3>
+          <button @click="showBackupSyncModal = false" class="close-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom: 15px; color: #666;">本地数据版本比云端更新，请验证管理员密码后同步备份到云端。</p>
+          <div class="password-input-wrapper">
+            <input
+              v-model="backupSyncPassword"
+              type="password"
+              placeholder="请输入管理员密码"
+              class="batch-input password-input"
+              @keyup.enter="handleBackupSync"
+            />
+          </div>
+          <p v-if="backupSyncError" class="batch-error">{{ backupSyncError }}</p>
+          <p v-if="backupSyncSuccess" class="batch-success">{{ backupSyncSuccess }}</p>
+          <div class="batch-actions" style="margin-top: 20px;">
+            <button @click="showBackupSyncModal = false" class="btn btn-cancel">取消</button>
+            <button @click="handleBackupSync" class="btn btn-primary" :disabled="backupSyncLoading || !backupSyncPassword">
+              {{ backupSyncLoading ? '同步中...' : '同步备份到云端' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch } from 'vue';
-import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId } from '../api';
+import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion } from '../api';
 import axios from 'axios';
 
 // AI API 辅助函数
@@ -1133,6 +1172,15 @@ const rememberDuration = ref('7days');
 const showAuthPasswordText = ref(false);
 const authPasswordInput = ref(null);
 const pendingAction = ref(null); // 待执行的操作回调
+
+// 云端备份同步状态
+const cloudNeedsSync = ref(false);
+const showBackupSyncModal = ref(false);
+const backupSyncPassword = ref('');
+const backupSyncLoading = ref(false);
+const backupSyncError = ref('');
+const backupSyncSuccess = ref('');
+let versionCheckTimer = null;
 
 // 记住时长配置
 const REMEMBER_DURATIONS = {
@@ -1701,6 +1749,10 @@ onMounted(async () => {
   
   // 检查 AI 配置状态
   checkAIConfig();
+
+  // 检查云端版本差异
+  checkCloudVersion();
+  versionCheckTimer = setInterval(checkCloudVersion, 2 * 60 * 60 * 1000);
   
   // ========== 优化：先加载缓存数据实现秒开 ==========
   const CACHE_KEY = 'nav_data_cache';
@@ -2187,6 +2239,10 @@ onUnmounted(() => {
   }
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
+  }
+  if (versionCheckTimer) {
+    clearInterval(versionCheckTimer);
+    versionCheckTimer = null;
   }
 });
 
@@ -3371,6 +3427,44 @@ function closePasswordModal() {
   authShake.value = false;
   showAuthPasswordText.value = false;
   pendingAction.value = null;
+}
+
+// 版本检测
+async function checkCloudVersion() {
+  try {
+    const res = await checkWebdavVersion();
+    const data = res.data || {};
+    cloudNeedsSync.value = data.needsSync === true;
+  } catch (e) {
+    // 忽略版本检测失败
+  }
+}
+
+// 同步备份到云端
+async function handleBackupSync() {
+  if (!backupSyncPassword.value) {
+    backupSyncError.value = '请输入密码';
+    return;
+  }
+  backupSyncLoading.value = true;
+  backupSyncError.value = '';
+  backupSyncSuccess.value = '';
+  try {
+    const authRes = await verifyPassword(backupSyncPassword.value);
+    localStorage.setItem('token', authRes.data.token);
+    await axios.post('/api/backup/webdav/backup', {}, {
+      headers: { Authorization: `Bearer ${authRes.data.token}` }
+    });
+    backupSyncSuccess.value = '云备份同步成功！';
+    await checkCloudVersion();
+    if (!cloudNeedsSync.value) {
+      setTimeout(() => { showBackupSyncModal.value = false; }, 1500);
+    }
+  } catch (error) {
+    backupSyncError.value = error.response?.data?.message || '同步失败，请检查密码或网络';
+  } finally {
+    backupSyncLoading.value = false;
+  }
 }
 
 // 验证密码
@@ -5056,6 +5150,23 @@ async function saveCardEdit() {
   color: #fff;
 }
 
+.toolbar-icon-btn.cloud-sync-warning {
+  background: rgba(220, 38, 38, 0.85);
+  color: #fff;
+  border-color: rgba(220, 38, 38, 0.9);
+  animation: cloud-sync-pulse 2s ease-in-out infinite;
+}
+
+.toolbar-icon-btn.cloud-sync-warning:hover {
+  background: #dc2626;
+  transform: scale(1.08);
+}
+
+@keyframes cloud-sync-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+}
+
 .toolbar-badge {
   position: absolute;
   top: -4px;
@@ -6658,6 +6769,12 @@ async function saveCardEdit() {
 
 .batch-error {
   color: #dc2626;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.batch-success {
+  color: #16a34a;
   font-size: 14px;
   margin-bottom: 16px;
 }

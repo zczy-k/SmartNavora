@@ -118,6 +118,7 @@ export const getTagCardCount = (id) => instance.get(`/tags/${id}/cards/count`);
 export const detectDuplicates = () => instance.get(`/cards/detect-duplicates/all?_t=${Date.now()}`);
 export const removeDuplicates = (cardIds) => instance.post(`/cards/remove-duplicates`, { cardIds });
 export const removeManyCards = (cardIds) => instance.post(`/cards/remove-many`, { cardIds });
+export const checkWebdavVersion = () => instance.get(`/backup/webdav/version-check?_t=${Date.now()}`);
 
 // 备份API
 export const createBackup = (name, description) => instance.post(`/backup/create`, { name, description });

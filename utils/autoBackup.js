@@ -18,13 +18,13 @@ const DEFAULT_CONFIG = {
   debounce: {
     enabled: true,
     delay: 5,                      // 5分钟防抖延迟
-    keep: 5                        // 保留5个增量备份
+    keep: 3                        // 保留3个增量备份
   },
   scheduled: {
     enabled: true,
     hour: 2,                       // 每天凌晨2点
     minute: 0,
-    keep: 7,                       // 保留7个
+    keep: 3,                       // 保留3个
     onlyIfModified: true           // 仅在有修改时备份（避免重复）
   },
   webdav: {
@@ -233,6 +233,22 @@ async function getWebDAVClient() {
 }
 
 /**
+ * 写入 WebDAV 版本元信息文件
+ */
+async function writeWebDAVMeta(client, remotePath) {
+  try {
+    const db = require('../db');
+    const version = await db.getDataVersion();
+    await client.putFileContents(
+      `${remotePath}/_latest-version.json`,
+      Buffer.from(JSON.stringify({ dataVersion: version, updatedAt: new Date().toISOString() }, null, 2))
+    );
+  } catch (e) {
+    // 版本元信息写入失败，忽略
+  }
+}
+
+/**
  * 同步备份到WebDAV（带重试）
  */
 async function syncToWebDAV(backupPath, backupName, retries = 2) {
@@ -254,6 +270,16 @@ async function syncToWebDAV(backupPath, backupName, retries = 2) {
       const remoteFilePath = `${remotePath}/${backupName}`;
       await client.putFileContents(remoteFilePath, fileBuffer);
       
+      // 写入版本元信息
+      await writeWebDAVMeta(client, remotePath);
+      
+      // 清理云端旧备份，保留6个最新
+      try {
+        await cleanWebDAVBackups(6);
+      } catch (e) {
+        // 清理失败，忽略
+      }
+      
       return true;
     } catch (error) {
       if (attempt < retries) {
@@ -268,8 +294,10 @@ async function syncToWebDAV(backupPath, backupName, retries = 2) {
 
 /**
  * 清理WebDAV上的过期备份
+ * @param {number} keepCount 保留数量
+ * @param {string|null} prefix 过滤前缀（null 表示全部备份类型）
  */
-async function cleanWebDAVBackups(prefix, keepCount) {
+async function cleanWebDAVBackups(keepCount, prefix = null) {
   try {
     const client = await getWebDAVClient();
     if (!client) return;
@@ -285,17 +313,22 @@ async function cleanWebDAVBackups(prefix, keepCount) {
       return;
     }
     
-    // 过滤并排序
-    const backups = contents
-      .filter(item => item.type === 'file' && item.filename.includes(prefix) && item.filename.endsWith('.zip'))
-      .sort((a, b) => new Date(b.lastmod) - new Date(a.lastmod));
+    // 过滤备份文件（排除元数据文件）
+    let backups = contents
+      .filter(item => item.type === 'file' && item.filename.endsWith('.zip'));
+
+    // 如果指定了前缀，按前缀过滤
+    if (prefix) {
+      backups = backups.filter(item => item.filename.includes(prefix));
+    }
+    
+    // 按修改时间排序（最新的在前）
+    backups.sort((a, b) => new Date(b.lastmod) - new Date(a.lastmod));
     
     // 删除超出保留数量的备份
-    let deletedCount = 0;
     for (let i = keepCount; i < backups.length; i++) {
       try {
         await client.deleteFile(backups[i].filename);
-        deletedCount++;
       } catch (e) {
         // 删除失败，忽略
       }
@@ -387,7 +420,7 @@ async function triggerDebouncedBackup(clientId = null, payload = null) {
       if (config.webdav && config.webdav.enabled && config.webdav.syncIncremental) {
         const synced = await syncToWebDAV(result.path, result.name);
         if (synced && config.autoClean) {
-          await cleanWebDAVBackups('incremental', config.debounce.keep);
+          await cleanWebDAVBackups(config.debounce.keep, 'incremental');
         }
       }
       
@@ -436,7 +469,7 @@ function startScheduledBackup() {
       if (config.webdav && config.webdav.enabled && config.webdav.syncDaily) {
         const synced = await syncToWebDAV(result.path, result.name);
         if (synced && config.autoClean) {
-          await cleanWebDAVBackups('daily', config.scheduled.keep);
+          await cleanWebDAVBackups(config.scheduled.keep, 'daily');
         }
       }
       
@@ -546,5 +579,7 @@ module.exports = {
   startScheduledBackup,
   getBackupStats,
   getConfig,
-  updateConfig
+  updateConfig,
+  getWebDAVClient,
+  writeWebDAVMeta
 };

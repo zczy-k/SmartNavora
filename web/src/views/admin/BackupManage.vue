@@ -1052,13 +1052,13 @@ const resetToDefaults = () => {
   autoBackupConfig.debounce = {
     enabled: true,
     delay: 5,
-    keep: 5
+    keep: 3
   };
   autoBackupConfig.scheduled = {
     enabled: true,
     hour: 2,
     minute: 0,
-    keep: 7,
+    keep: 3,
     onlyIfModified: true
   };
   autoBackupConfig.webdav = {
