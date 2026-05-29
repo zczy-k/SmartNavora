@@ -184,6 +184,16 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function tryOpaqueFetch(url, method, timeout = 15000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  try {
+    return await fetch(url, { method, mode: 'no-cors', signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function checkUrlFromBrowser(card) {
   const id = card.id;
   const title = card.title || '未命名卡片';
@@ -214,19 +224,24 @@ async function checkUrlFromBrowser(card) {
       response = await fetch(url, { method: 'HEAD', mode: 'cors', signal: controller.signal });
     } catch (corsError) {
       if (corsError.name === 'AbortError') throw corsError;
-      // CORS 拦截 → fallback no-cors 做连通性验证
+      // CORS 拦截或服务器拒绝 HEAD → 继续尝试 no-cors / GET 连通性验证
       clearTimeout(timeoutId);
-      const c2 = new AbortController();
-      const t2 = setTimeout(() => c2.abort(), 15000);
       try {
-        const opaque = await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: c2.signal });
-        clearTimeout(t2);
+        const opaque = await tryOpaqueFetch(url, 'HEAD');
         if (opaque.type === 'opaque') {
           return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '服务器可访问', detail: 'CORS 限制无法获取详细状态码', statusCode: null };
         }
-      } catch {
-        clearTimeout(t2);
-        throw corsError; // no-cors 也失败，抛出原始错误
+      } catch (headOpaqueError) {
+        if (headOpaqueError.name === 'AbortError') throw headOpaqueError;
+        try {
+          const opaqueGet = await tryOpaqueFetch(url, 'GET');
+          if (opaqueGet.type === 'opaque') {
+            return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '服务器可访问', detail: '站点拒绝 HEAD，已通过 GET 连通性验证', statusCode: null };
+          }
+        } catch (getOpaqueError) {
+          if (getOpaqueError.name === 'AbortError') throw getOpaqueError;
+        }
+        throw corsError;
       }
     }
     clearTimeout(timeoutId);
