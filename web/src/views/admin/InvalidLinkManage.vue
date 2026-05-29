@@ -4,6 +4,10 @@
       <div>
         <h3>失效链接治理</h3>
         <p class="page-desc">扫描全部卡片链接，优先清理明确失效的站点，并把 Cloudflare 验证、真正无法连接、仍需人工确认的链接分开列出。</p>
+        <div class="extension-status-inline" :class="extensionAvailable ? 'is-ready' : 'is-missing'">
+          <span class="status-dot"></span>
+          <span>{{ extensionAvailable ? '扩展已就绪，可直接检测' : '未检测到扩展，需先安装后使用' }}</span>
+        </div>
       </div>
       <div class="top-actions">
         <button @click="viewOnlyUnreachable = !viewOnlyUnreachable" class="btn btn-secondary">
@@ -833,6 +837,44 @@ onMounted(() => {
 .page-desc {
   color: #6b7280;
   margin-top: 6px;
+}
+
+.extension-status-inline {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.extension-status-inline.is-ready {
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.extension-status-inline.is-missing {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.extension-status-inline .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.extension-status-inline.is-ready .status-dot {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+}
+
+.extension-status-inline.is-missing .status-dot {
+  background: #f97316;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.12);
 }
 
 .extension-guide-banner {
