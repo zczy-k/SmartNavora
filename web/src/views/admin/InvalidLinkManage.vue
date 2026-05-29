@@ -10,8 +10,8 @@
         </div>
       </div>
       <div class="top-actions">
-        <button @click="viewOnlyUnreachable = !viewOnlyUnreachable" class="btn btn-secondary">
-          {{ viewOnlyUnreachable ? '显示全部结果' : '仅查看真正断链' }}
+        <button @click="toggleSummaryFilter('unreachable')" class="btn btn-secondary">
+          {{ activeSummaryFilter === 'unreachable' ? '显示全部结果' : '仅查看真正断链' }}
         </button>
         <button @click="handleDetectInvalidLinks" class="btn btn-primary" :disabled="detecting || removing">
           {{ detecting ? (detectProgressText || '检测中...') : '🔗 一键检测失效链接' }}
@@ -31,34 +31,34 @@
     </div>
 
     <div v-if="summary" class="summary-grid">
-      <div class="summary-card">
+      <button class="summary-card summary-button" :class="{ active: activeSummaryFilter === 'all' }" @click="toggleSummaryFilter('all')">
         <div class="summary-label">总卡片数</div>
         <div class="summary-value">{{ summary.total }}</div>
-      </div>
-      <div class="summary-card success">
+      </button>
+      <button class="summary-card summary-button success" :class="{ active: activeSummaryFilter === 'valid' }" @click="toggleSummaryFilter('valid')">
         <div class="summary-label">有效链接</div>
         <div class="summary-value">{{ summary.valid }}</div>
-      </div>
-      <div class="summary-card danger">
+      </button>
+      <button class="summary-card summary-button danger" :class="{ active: activeSummaryFilter === 'safe' }" @click="toggleSummaryFilter('safe')">
         <div class="summary-label">确定失效</div>
         <div class="summary-value">{{ summary.safeToDelete }}</div>
-      </div>
-      <div class="summary-card warning">
+      </button>
+      <button class="summary-card summary-button warning" :class="{ active: activeSummaryFilter === 'cloudflare' }" @click="toggleSummaryFilter('cloudflare')">
         <div class="summary-label">Cloudflare 验证</div>
         <div class="summary-value">{{ summary.cloudflare }}</div>
-      </div>
-      <div class="summary-card warning">
+      </button>
+      <button class="summary-card summary-button warning" :class="{ active: activeSummaryFilter === 'unreachable' }" @click="toggleSummaryFilter('unreachable')">
         <div class="summary-label">无法连接</div>
         <div class="summary-value">{{ summary.unreachable }}</div>
-      </div>
-      <div class="summary-card warning">
+      </button>
+      <button class="summary-card summary-button warning" :class="{ active: activeSummaryFilter === 'manual' }" @click="toggleSummaryFilter('manual')">
         <div class="summary-label">人工确认</div>
         <div class="summary-value">{{ summary.manualReview }}</div>
-      </div>
-      <div class="summary-card muted">
+      </button>
+      <button class="summary-card summary-button muted" :class="{ active: activeSummaryFilter === 'skipped' }" @click="toggleSummaryFilter('skipped')">
         <div class="summary-label">跳过检测</div>
         <div class="summary-value">{{ summary.skipped }}</div>
-      </div>
+      </button>
     </div>
 
     <div v-if="scannedAt" class="scan-meta">最近检测：{{ formattedScannedAt }}</div>
@@ -73,7 +73,7 @@
       </div>
     </div>
 
-    <div v-if="!viewOnlyUnreachable && safeToDelete.length > 0" class="result-section danger-section">
+    <div v-if="shouldShowSection('safe') && safeToDelete.length > 0" class="result-section danger-section">
       <div class="result-header">
         <div>
           <h4>确定失效</h4>
@@ -120,7 +120,7 @@
       </div>
     </div>
 
-    <div v-if="!viewOnlyUnreachable && cloudflareProtected.length > 0" class="result-section warning-section">
+    <div v-if="shouldShowSection('cloudflare') && cloudflareProtected.length > 0" class="result-section warning-section">
       <div class="result-header">
         <div>
           <h4>Cloudflare 人机验证</h4>
@@ -164,7 +164,7 @@
       </div>
     </div>
 
-    <div v-if="unreachableItems.length > 0" class="result-section danger-section">
+    <div v-if="shouldShowSection('unreachable') && unreachableItems.length > 0" class="result-section danger-section">
       <div class="result-header">
         <div>
           <h4>真正无法连接</h4>
@@ -211,7 +211,7 @@
       </div>
     </div>
 
-    <div v-if="!viewOnlyUnreachable && manualReviewItems.length > 0" class="result-section warning-section">
+    <div v-if="shouldShowSection('manual') && manualReviewItems.length > 0" class="result-section warning-section">
       <div class="result-header">
         <div>
           <h4>仍需人工确认</h4>
@@ -260,7 +260,7 @@
       <p>当前卡片链接整体状态正常。</p>
     </div>
 
-    <div v-else-if="detected && viewOnlyUnreachable && unreachableItems.length === 0" class="empty-state success-state">
+    <div v-else-if="detected && activeSummaryFilter === 'unreachable' && unreachableItems.length === 0" class="empty-state success-state">
       <h3>没有真正断链</h3>
       <p>当前检测结果中，没有识别出“真正无法连接”的卡片。</p>
     </div>
@@ -270,7 +270,7 @@
       <p>系统会自动执行多轮检测，并将结果分为“确定失效”、“Cloudflare 验证”、“真正无法连接”和“仍需人工确认”。</p>
     </div>
 
-    <div v-if="skipped.length > 0" class="skipped-box">
+    <div v-if="shouldShowSection('skipped') && skipped.length > 0" class="skipped-box">
       <strong>已跳过 {{ skipped.length }} 条链接：</strong>
       <span>包含内网、本地地址或非 HTTP 链接，不参与公网连通性判断。</span>
     </div>
@@ -323,7 +323,7 @@ const selectedUnreachableIds = ref([]);
 const selectedManualIds = ref([]);
 const detectProgressText = ref('');
 const detectProgressPercent = ref(0);
-const viewOnlyUnreachable = ref(false);
+const activeSummaryFilter = ref('all');
 const extensionAvailable = ref(null);
 const showExtensionGuide = ref(false);
 
@@ -489,6 +489,18 @@ let extensionRequestSeed = 0;
 
 function formatCategory(item) {
   return item.subMenuName ? `${item.menuName} / ${item.subMenuName}` : item.menuName;
+}
+
+function toggleSummaryFilter(filter) {
+  if (filter === 'all') {
+    activeSummaryFilter.value = 'all';
+    return;
+  }
+  activeSummaryFilter.value = activeSummaryFilter.value === filter ? 'all' : filter;
+}
+
+function shouldShowSection(section) {
+  return activeSummaryFilter.value === 'all' || activeSummaryFilter.value === section;
 }
 
 function openLink(url) {
@@ -906,6 +918,23 @@ onMounted(() => {
   border-radius: 14px;
   padding: 16px;
   box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06);
+}
+
+.summary-button {
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.summary-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+}
+
+.summary-button.active {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
 }
 
 .summary-card.success {
