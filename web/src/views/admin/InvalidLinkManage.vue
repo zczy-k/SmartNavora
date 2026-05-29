@@ -147,7 +147,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { getAllCards, recheckInvalidLinks, removeManyCards } from '../../api';
+import { getAllCards, removeManyCards } from '../../api';
 
 const detecting = ref(false);
 const removing = ref(false);
@@ -161,6 +161,98 @@ const skipped = ref([]);
 const selectedSafeIds = ref([]);
 const selectedMaybeIds = ref([]);
 const detectProgressText = ref('');
+
+function isPrivateHostname(hostname) {
+  const value = (hostname || '').toLowerCase();
+  if (!value || value === 'localhost' || value.endsWith('.local')) return true;
+  if (/^10\./.test(value) || /^127\./.test(value) || /^192\.168\./.test(value)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(value)) return true;
+  if (/^169\.254\./.test(value)) return true;
+  if (value === '::1' || value.startsWith('fc') || value.startsWith('fd') || value.startsWith('fe80:')) return true;
+  return false;
+}
+
+function isAccessibleStatus(status) {
+  return (status >= 200 && status < 400) || status === 401 || status === 403;
+}
+
+function isRetryableStatus(status) {
+  return status === 408 || status === 425 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function checkUrlFromBrowser(card) {
+  const id = card.id;
+  const title = card.title || '未命名卡片';
+  const url = card.url;
+  const menuName = card.menu_name || card.menuName || '未分类';
+  const subMenuName = card.sub_menu_name || card.subMenuName || '';
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return { id, title, url, menuName, subMenuName, bucket: 'skipped', reason: '链接格式无效', detail: '无法解析为有效 URL', statusCode: null };
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return { id, title, url, menuName, subMenuName, bucket: 'skipped', reason: '非 HTTP 链接', detail: parsedUrl.protocol, statusCode: null };
+  }
+
+  if (isPrivateHostname(parsedUrl.hostname)) {
+    return { id, title, url, menuName, subMenuName, bucket: 'skipped', reason: '内网或本地地址', detail: parsedUrl.hostname, statusCode: null };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const response = await fetch(url, { method: 'HEAD', signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (response.type === 'opaque') {
+      return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '服务器可访问', detail: 'CORS 限制无法获取详细状态码', statusCode: null };
+    }
+
+    const status = response.status;
+    if (isAccessibleStatus(status)) {
+      return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '访问正常', detail: `HTTP ${status}`, statusCode: status };
+    }
+    if (status === 404 || status === 410) {
+      return { id, title, url, menuName, subMenuName, bucket: 'safe_to_delete', reason: status === 404 ? '页面不存在' : '页面已永久删除', detail: `HTTP ${status}`, statusCode: status };
+    }
+
+    if (isRetryableStatus(status)) {
+      await delay(600);
+      const controller2 = new AbortController();
+      const timeoutId2 = setTimeout(() => controller2.abort(), 15000);
+      try {
+        const retryResponse = await fetch(url, { method: 'GET', signal: controller2.signal });
+        clearTimeout(timeoutId2);
+        if (retryResponse.type !== 'opaque') {
+          const rs = retryResponse.status;
+          if (isAccessibleStatus(rs)) {
+            return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '访问正常', detail: `重试后恢复，HTTP ${rs}`, statusCode: rs };
+          }
+          if (rs === 404 || rs === 410) {
+            return { id, title, url, menuName, subMenuName, bucket: 'safe_to_delete', reason: rs === 404 ? '页面不存在' : '页面已永久删除', detail: `重试后确认，HTTP ${rs}`, statusCode: rs };
+          }
+        }
+      } catch {
+        // retry failed
+      }
+    }
+
+    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: `HTTP ${status}`, detail: `服务器返回错误状态码`, statusCode: status };
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: '连接超时', detail: '15秒内未响应', statusCode: null };
+    }
+    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: '无法连接', detail: error.message || '网络错误', statusCode: null };
+  }
+}
 
 function handleBeforeUnload(event) {
   if (!detecting.value) return;
@@ -234,24 +326,23 @@ function applyDetectionSnapshot(data) {
   detected.value = true;
 }
 
-async function collectDetectionResults(ids, progressPrefix = '正在检测') {
+async function collectDetectionResults(cards, progressPrefix = '正在检测') {
   const mergedSafe = [];
   const mergedMaybe = [];
   const mergedSkipped = [];
 
-  for (let i = 0; i < ids.length; i++) {
-    detectProgressText.value = `${progressPrefix} ${i + 1}/${ids.length}...`;
-    const res = await recheckInvalidLinks([ids[i]]);
-    const data = res.data || {};
+  for (let i = 0; i < cards.length; i++) {
+    detectProgressText.value = `${progressPrefix} ${i + 1}/${cards.length}...`;
+    const result = await checkUrlFromBrowser(cards[i]);
 
-    if (data.safeToDelete?.length) mergedSafe.push(...data.safeToDelete);
-    if (data.maybeInvalid?.length) mergedMaybe.push(...data.maybeInvalid);
-    if (data.skipped?.length) mergedSkipped.push(...data.skipped);
+    if (result.bucket === 'safe_to_delete') mergedSafe.push(result);
+    else if (result.bucket === 'maybe_invalid') mergedMaybe.push(result);
+    else if (result.bucket === 'skipped') mergedSkipped.push(result);
   }
 
   return {
     scannedAt: new Date().toISOString(),
-    total: ids.length,
+    total: cards.length,
     safeToDelete: mergedSafe.sort((a, b) => b.id - a.id),
     maybeInvalid: mergedMaybe.sort((a, b) => b.id - a.id),
     skipped: mergedSkipped.sort((a, b) => b.id - a.id)
@@ -291,14 +382,13 @@ async function handleDetectInvalidLinks() {
   try {
     const cardsRes = await getAllCards(true);
     const allCards = Object.values(cardsRes.data?.cardsByCategory || {}).flat().filter(Boolean);
-    const allIds = allCards.map(card => card.id).filter(Boolean);
 
-    if (allIds.length === 0) {
+    if (allCards.length === 0) {
       applyDetectionSnapshot({ scannedAt: new Date().toISOString(), total: 0, safeToDelete: [], maybeInvalid: [], skipped: [] });
       return;
     }
 
-    applyDetectionSnapshot(await collectDetectionResults(allIds, '正在检测'));
+    applyDetectionSnapshot(await collectDetectionResults(allCards, '正在检测'));
   } catch (error) {
     errorMsg.value = error.response?.data?.error || '检测失效链接失败';
   } finally {
@@ -324,14 +414,16 @@ async function removeCards(cardIds, confirmMessage) {
 }
 
 async function recheckSelected(group) {
-  const ids = group === 'safe' ? [...selectedSafeIds.value] : [...selectedMaybeIds.value];
-  if (ids.length === 0) return;
+  const source = group === 'safe' ? safeToDelete.value : maybeInvalid.value;
+  const selectedIds = group === 'safe' ? [...selectedSafeIds.value] : [...selectedMaybeIds.value];
+  if (selectedIds.length === 0) return;
 
   detecting.value = true;
   errorMsg.value = '';
   try {
-    const data = await collectDetectionResults(ids, '正在复检');
-    mergeRecheckResults(data, ids);
+    const cardsToRecheck = source.filter(item => selectedIds.includes(item.id));
+    const data = await collectDetectionResults(cardsToRecheck, '正在复检');
+    mergeRecheckResults(data, selectedIds);
   } catch (error) {
     errorMsg.value = error.response?.data?.error || '重新检测失败';
   } finally {
