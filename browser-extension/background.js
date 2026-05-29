@@ -57,6 +57,35 @@ function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function isCloudflareChallenge(response, bodyText = '') {
+    const server = (response.headers.get('server') || '').toLowerCase();
+    const cfRay = response.headers.get('cf-ray');
+    const text = String(bodyText || '').toLowerCase();
+
+    if (cfRay) return true;
+    if (server.includes('cloudflare') && response.status >= 400) return true;
+
+    return [
+        'attention required! | cloudflare',
+        'just a moment...',
+        'checking your browser before accessing',
+        '/cdn-cgi/challenge-platform/',
+        'cf-browser-verification',
+        'cf-chl-',
+        '__cf_bm'
+    ].some(marker => text.includes(marker));
+}
+
+async function readResponseTextSafe(response) {
+    try {
+        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+        if (!contentType.includes('text/html') && !contentType.includes('text/plain')) return '';
+        return await response.text();
+    } catch {
+        return '';
+    }
+}
+
 async function checkUrlFromExtension(card) {
     const id = card.id;
     const title = card.title || '未命名卡片';
@@ -90,12 +119,30 @@ async function checkUrlFromExtension(card) {
         }
     };
 
+    const tryFetchRoot = async () => {
+        const rootUrl = `${parsedUrl.origin}/`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        try {
+            return await fetch(rootUrl, {
+                method: 'GET',
+                redirect: 'follow',
+                cache: 'no-store',
+                signal: controller.signal
+            });
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    };
+
     try {
         let response;
+        let usedHead = true;
         try {
             response = await tryFetch('HEAD');
         } catch (error) {
             if (error.name === 'AbortError') throw error;
+            usedHead = false;
             response = await tryFetch('GET');
         }
 
@@ -104,7 +151,35 @@ async function checkUrlFromExtension(card) {
             return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '访问正常', detail: `HTTP ${status}`, statusCode: status };
         }
         if (status === 404 || status === 410) {
-            return { id, title, url, menuName, subMenuName, bucket: 'safe_to_delete', reason: status === 404 ? '页面不存在' : '页面已永久删除', detail: `HTTP ${status}`, statusCode: status };
+            try {
+                const confirmResponse = usedHead ? await tryFetch('GET') : response;
+                const confirmStatus = confirmResponse.status;
+                if (isAccessibleStatus(confirmStatus)) {
+                    return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '访问正常', detail: `HEAD ${status}，GET 确认恢复为 HTTP ${confirmStatus}`, statusCode: confirmStatus };
+                }
+                if (confirmStatus === 404 || confirmStatus === 410) {
+                    return { id, title, url, menuName, subMenuName, bucket: 'safe_to_delete', reason: confirmStatus === 404 ? '页面不存在' : '页面已永久删除', detail: `HEAD/GET 均确认 HTTP ${confirmStatus}`, statusCode: confirmStatus };
+                }
+                return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: `HTTP ${confirmStatus}`, detail: `HEAD ${status}，GET 返回 ${confirmStatus}`, statusCode: confirmStatus };
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: '连接超时', detail: 'GET 二次确认超时', statusCode: null };
+                }
+            }
+        }
+
+        if (status === 403 || status === 429) {
+            try {
+                const getResponse = usedHead ? await tryFetch('GET') : response;
+                const bodyText = await readResponseTextSafe(getResponse.clone());
+                if (isCloudflareChallenge(getResponse, bodyText)) {
+                    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'cloudflare', reason: 'Cloudflare 人机验证', detail: `HTTP ${getResponse.status}，需要人工验证`, statusCode: getResponse.status };
+                }
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: '连接超时', detail: 'GET 二次确认超时', statusCode: null };
+                }
+            }
         }
 
         if (isRetryableStatus(status)) {
@@ -112,6 +187,10 @@ async function checkUrlFromExtension(card) {
             try {
                 const retryResponse = await tryFetch('GET');
                 const rs = retryResponse.status;
+                const retryBody = await readResponseTextSafe(retryResponse.clone());
+                if (isCloudflareChallenge(retryResponse, retryBody)) {
+                    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'cloudflare', reason: 'Cloudflare 人机验证', detail: `重试后命中 Cloudflare 验证页，HTTP ${rs}`, statusCode: rs };
+                }
                 if (isAccessibleStatus(rs)) {
                     return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '访问正常', detail: `重试后恢复，HTTP ${rs}`, statusCode: rs };
                 }
@@ -120,17 +199,36 @@ async function checkUrlFromExtension(card) {
                 }
             } catch (error) {
                 if (error.name === 'AbortError') {
-                    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: '连接超时', detail: '15秒内未响应', statusCode: null };
+                    return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: '连接超时', detail: '15秒内未响应', statusCode: null };
                 }
             }
         }
 
-        return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: `HTTP ${status}`, detail: '服务器返回错误状态码', statusCode: status };
+        try {
+            const rootResponse = await tryFetchRoot();
+            const rootBody = await readResponseTextSafe(rootResponse.clone());
+
+            if (isCloudflareChallenge(rootResponse, rootBody)) {
+                return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'cloudflare', reason: 'Cloudflare 人机验证', detail: `目标链接无法直接确认，站点根路径命中 Cloudflare 验证，HTTP ${rootResponse.status}`, statusCode: rootResponse.status };
+            }
+
+            if (isAccessibleStatus(rootResponse.status)) {
+                return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'manual_review', reason: `HTTP ${status}`, detail: `站点根路径可访问（HTTP ${rootResponse.status}），但当前链接异常，建议人工验证`, statusCode: status };
+            }
+
+            return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: `HTTP ${status}`, detail: `站点根路径也异常（HTTP ${rootResponse.status}）`, statusCode: status };
+        } catch (error) {
+            if (error.name === 'AbortError') {
+                return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: '连接超时', detail: '站点根路径复测超时', statusCode: null };
+            }
+        }
+
+        return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: `HTTP ${status}`, detail: '服务器返回错误状态码', statusCode: status };
     } catch (error) {
         if (error.name === 'AbortError') {
-            return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: '连接超时', detail: '15秒内未响应', statusCode: null };
+            return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: '连接超时', detail: '15秒内未响应', statusCode: null };
         }
-        return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', reason: '无法连接', detail: error.message || '网络错误', statusCode: null };
+        return { id, title, url, menuName, subMenuName, bucket: 'maybe_invalid', subtype: 'unreachable', reason: '无法连接', detail: error.message || '网络错误', statusCode: null };
     }
 }
 

@@ -3,7 +3,7 @@
     <div class="section-header">
       <div>
         <h3>失效链接治理</h3>
-        <p class="page-desc">扫描全部卡片链接，优先清理明确失效的站点，并把可能失效的链接单独列出人工确认。</p>
+        <p class="page-desc">扫描全部卡片链接，优先清理明确失效的站点，并把 Cloudflare 验证、真正无法连接、仍需人工确认的链接分开列出。</p>
       </div>
       <button @click="handleDetectInvalidLinks" class="btn btn-primary" :disabled="detecting || removing">
         {{ detecting ? (detectProgressText || '检测中...') : '🔗 一键检测失效链接' }}
@@ -24,8 +24,16 @@
         <div class="summary-value">{{ summary.safeToDelete }}</div>
       </div>
       <div class="summary-card warning">
-        <div class="summary-label">可能失效</div>
-        <div class="summary-value">{{ summary.maybeInvalid }}</div>
+        <div class="summary-label">Cloudflare 验证</div>
+        <div class="summary-value">{{ summary.cloudflare }}</div>
+      </div>
+      <div class="summary-card warning">
+        <div class="summary-label">无法连接</div>
+        <div class="summary-value">{{ summary.unreachable }}</div>
+      </div>
+      <div class="summary-card warning">
+        <div class="summary-label">人工确认</div>
+        <div class="summary-value">{{ summary.manualReview }}</div>
       </div>
       <div class="summary-card muted">
         <div class="summary-label">跳过检测</div>
@@ -34,6 +42,16 @@
     </div>
 
     <div v-if="scannedAt" class="scan-meta">最近检测：{{ formattedScannedAt }}</div>
+
+    <div v-if="detecting" class="progress-card">
+      <div class="progress-header">
+        <span>{{ detectProgressText || '正在检测...' }}</span>
+        <strong>{{ detectProgressPercent }}%</strong>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill" :style="{ width: `${detectProgressPercent}%` }"></div>
+      </div>
+    </div>
 
     <div v-if="safeToDelete.length > 0" class="result-section danger-section">
       <div class="result-header">
@@ -82,29 +100,29 @@
       </div>
     </div>
 
-    <div v-if="maybeInvalid.length > 0" class="result-section warning-section">
+    <div v-if="cloudflareProtected.length > 0" class="result-section warning-section">
       <div class="result-header">
         <div>
-          <h4>可能失效</h4>
-          <p>这类链接可能只是网络波动、限流或目标站限制访问，建议先点开确认后再删除。</p>
+          <h4>Cloudflare 人机验证</h4>
+          <p>这类链接大概率仍然可用，但当前需要人工验证或盾页挑战，建议先打开确认。</p>
         </div>
         <div class="header-actions">
-          <button class="btn btn-secondary" @click="toggleSelectAll('maybe')">
-            {{ allMaybeSelected ? '取消全选' : '全选本组' }}
+          <button class="btn btn-secondary" @click="toggleSelectAll('cloudflare')">
+            {{ allCloudflareSelected ? '取消全选' : '全选本组' }}
           </button>
-          <button class="btn btn-secondary" :disabled="detecting || removing || selectedMaybeIds.length === 0" @click="recheckSelected('maybe')">
-            {{ detecting ? '复检中...' : `重新检测已选 (${selectedMaybeIds.length})` }}
+          <button class="btn btn-secondary" :disabled="detecting || removing || selectedCloudflareIds.length === 0" @click="recheckSelected('cloudflare')">
+            {{ detecting ? '复检中...' : `重新检测已选 (${selectedCloudflareIds.length})` }}
           </button>
-          <button class="btn btn-warning" :disabled="removing || selectedMaybeIds.length === 0" @click="removeSelected('maybe')">
-            {{ removing ? '删除中...' : `删除已选 (${selectedMaybeIds.length})` }}
+          <button class="btn btn-warning" :disabled="removing || selectedCloudflareIds.length === 0" @click="removeSelected('cloudflare')">
+            {{ removing ? '删除中...' : `删除已选 (${selectedCloudflareIds.length})` }}
           </button>
         </div>
       </div>
 
       <div class="result-list">
-        <div v-for="item in maybeInvalid" :key="item.id" class="result-item warning">
+        <div v-for="item in cloudflareProtected" :key="item.id" class="result-item warning">
           <label class="checkbox-wrap">
-            <input type="checkbox" :value="item.id" v-model="selectedMaybeIds" />
+            <input type="checkbox" :value="item.id" v-model="selectedCloudflareIds" />
           </label>
           <div class="result-info">
             <div class="result-title-row">
@@ -126,14 +144,102 @@
       </div>
     </div>
 
-    <div v-if="detected && safeToDelete.length === 0 && maybeInvalid.length === 0" class="empty-state success-state">
+    <div v-if="unreachableItems.length > 0" class="result-section danger-section">
+      <div class="result-header">
+        <div>
+          <h4>真正无法连接</h4>
+          <p>这类链接经过多轮检测后仍无法访问，通常才是真正断链或站点已不可达。</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary" @click="toggleSelectAll('unreachable')">
+            {{ allUnreachableSelected ? '取消全选' : '全选本组' }}
+          </button>
+          <button class="btn btn-secondary" :disabled="detecting || removing || selectedUnreachableIds.length === 0" @click="recheckSelected('unreachable')">
+            {{ detecting ? '复检中...' : `重新检测已选 (${selectedUnreachableIds.length})` }}
+          </button>
+          <button class="btn btn-danger" :disabled="removing || selectedUnreachableIds.length === 0" @click="removeSelected('unreachable')">
+            {{ removing ? '删除中...' : `删除已选 (${selectedUnreachableIds.length})` }}
+          </button>
+        </div>
+      </div>
+
+      <div class="result-list">
+        <div v-for="item in unreachableItems" :key="item.id" class="result-item danger">
+          <label class="checkbox-wrap">
+            <input type="checkbox" :value="item.id" v-model="selectedUnreachableIds" />
+          </label>
+          <div class="result-info">
+            <div class="result-title-row">
+              <strong>{{ item.title || '未命名卡片' }}</strong>
+              <span class="reason danger">{{ item.reason }}</span>
+            </div>
+            <a class="result-url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.url }}</a>
+            <div class="result-meta">
+              <span>分类：{{ formatCategory(item) }}</span>
+              <span v-if="item.detail">说明：{{ item.detail }}</span>
+              <span v-if="item.statusCode">状态码：{{ item.statusCode }}</span>
+            </div>
+          </div>
+          <div class="result-actions">
+            <button class="link-btn" @click="openLink(item.url)">新标签页打开</button>
+            <button class="delete-btn" :disabled="removing" @click="removeCards([item.id], `确定删除「${item.title || '未命名卡片'}」吗？`)">删除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="manualReviewItems.length > 0" class="result-section warning-section">
+      <div class="result-header">
+        <div>
+          <h4>仍需人工确认</h4>
+          <p>站点本身仍可访问，但当前具体页面状态异常，建议手动打开确认是否需要保留。</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary" @click="toggleSelectAll('manual')">
+            {{ allManualSelected ? '取消全选' : '全选本组' }}
+          </button>
+          <button class="btn btn-secondary" :disabled="detecting || removing || selectedManualIds.length === 0" @click="recheckSelected('manual')">
+            {{ detecting ? '复检中...' : `重新检测已选 (${selectedManualIds.length})` }}
+          </button>
+          <button class="btn btn-warning" :disabled="removing || selectedManualIds.length === 0" @click="removeSelected('manual')">
+            {{ removing ? '删除中...' : `删除已选 (${selectedManualIds.length})` }}
+          </button>
+        </div>
+      </div>
+
+      <div class="result-list">
+        <div v-for="item in manualReviewItems" :key="item.id" class="result-item warning">
+          <label class="checkbox-wrap">
+            <input type="checkbox" :value="item.id" v-model="selectedManualIds" />
+          </label>
+          <div class="result-info">
+            <div class="result-title-row">
+              <strong>{{ item.title || '未命名卡片' }}</strong>
+              <span class="reason warning">{{ item.reason }}</span>
+            </div>
+            <a class="result-url" :href="item.url" target="_blank" rel="noopener noreferrer">{{ item.url }}</a>
+            <div class="result-meta">
+              <span>分类：{{ formatCategory(item) }}</span>
+              <span v-if="item.detail">说明：{{ item.detail }}</span>
+              <span v-if="item.statusCode">状态码：{{ item.statusCode }}</span>
+            </div>
+          </div>
+          <div class="result-actions">
+            <button class="link-btn" @click="openLink(item.url)">新标签页打开</button>
+            <button class="delete-btn warning" :disabled="removing" @click="removeCards([item.id], `确定删除「${item.title || '未命名卡片'}」吗？`)">删除</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="detected && safeToDelete.length === 0 && cloudflareProtected.length === 0 && unreachableItems.length === 0 && manualReviewItems.length === 0" class="empty-state success-state">
       <h3>没有发现失效链接</h3>
       <p>当前卡片链接整体状态正常。</p>
     </div>
 
     <div v-else-if="!detected" class="empty-state initial-state">
       <h3>点击“一键检测失效链接”开始扫描</h3>
-      <p>系统会扫描全部卡片，并将结果分为“确定失效”和“可能失效”两组。</p>
+      <p>系统会自动执行多轮检测，并将结果分为“确定失效”、“Cloudflare 验证”、“真正无法连接”和“仍需人工确认”。</p>
     </div>
 
     <div v-if="skipped.length > 0" class="skipped-box">
@@ -156,11 +262,16 @@ const errorMsg = ref('');
 const scannedAt = ref('');
 const summary = ref(null);
 const safeToDelete = ref([]);
-const maybeInvalid = ref([]);
+const cloudflareProtected = ref([]);
+const unreachableItems = ref([]);
+const manualReviewItems = ref([]);
 const skipped = ref([]);
 const selectedSafeIds = ref([]);
-const selectedMaybeIds = ref([]);
+const selectedCloudflareIds = ref([]);
+const selectedUnreachableIds = ref([]);
+const selectedManualIds = ref([]);
 const detectProgressText = ref('');
+const detectProgressPercent = ref(0);
 
 function isPrivateHostname(hostname) {
   const value = (hostname || '').toLowerCase();
@@ -183,8 +294,6 @@ function isRetryableStatus(status) {
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
-
-const DETECT_CONCURRENCY = 8;
 
 async function tryOpaqueFetch(url, method, timeout = 15000) {
   const controller = new AbortController();
@@ -319,7 +428,9 @@ const formattedScannedAt = computed(() => {
 });
 
 const allSafeSelected = computed(() => safeToDelete.value.length > 0 && selectedSafeIds.value.length === safeToDelete.value.length);
-const allMaybeSelected = computed(() => maybeInvalid.value.length > 0 && selectedMaybeIds.value.length === maybeInvalid.value.length);
+const allCloudflareSelected = computed(() => cloudflareProtected.value.length > 0 && selectedCloudflareIds.value.length === cloudflareProtected.value.length);
+const allUnreachableSelected = computed(() => unreachableItems.value.length > 0 && selectedUnreachableIds.value.length === unreachableItems.value.length);
+const allManualSelected = computed(() => manualReviewItems.value.length > 0 && selectedManualIds.value.length === manualReviewItems.value.length);
 let extensionRequestSeed = 0;
 
 function formatCategory(item) {
@@ -374,35 +485,53 @@ async function isExtensionAvailable() {
 }
 
 async function collectDetectionResultsViaExtension(cards, progressPrefix = '正在检测') {
+  const mergedSafe = [];
+  const mergedMaybe = [];
+  const mergedSkipped = [];
+  const batchSize = 24;
+  let processed = 0;
+
   detectProgressText.value = `${progressPrefix}，正在调用扩展检测...`;
+  detectProgressPercent.value = 0;
 
   const available = await isExtensionAvailable();
   if (!available) {
     throw new Error('未检测到浏览器扩展，请安装并启用 SmartNavora 扩展后再进行失效链接检测');
   }
 
-  const requestId = createExtensionRequestId('scan');
-  const pending = waitForExtensionMessage('smartnavora-invalid-link-scan-result', requestId, 10 * 60 * 1000);
+  for (let start = 0; start < cards.length; start += batchSize) {
+    const batch = cards.slice(start, start + batchSize);
+    const requestId = createExtensionRequestId('scan');
+    const pending = waitForExtensionMessage('smartnavora-invalid-link-scan-result', requestId, 10 * 60 * 1000);
 
-  window.postMessage({
-    source: 'smartnavora-page',
-    type: 'smartnavora-invalid-link-scan-request',
-    requestId,
-    concurrency: 8,
-    cards
-  }, '*');
+    detectProgressText.value = `${progressPrefix} ${start + 1}-${Math.min(start + batch.length, cards.length)}/${cards.length}...`;
 
-  const result = await pending;
-  if (!result.response?.success) {
-    throw new Error(result.response?.error || '扩展检测失败');
+    window.postMessage({
+      source: 'smartnavora-page',
+      type: 'smartnavora-invalid-link-scan-request',
+      requestId,
+      concurrency: 8,
+      cards: batch
+    }, '*');
+
+    const result = await pending;
+    if (!result.response?.success) {
+      throw new Error(result.response?.error || '扩展检测失败');
+    }
+
+    mergedSafe.push(...(result.response.safeToDelete || []));
+    mergedMaybe.push(...(result.response.maybeInvalid || []));
+    mergedSkipped.push(...(result.response.skipped || []));
+    processed += batch.length;
+    detectProgressPercent.value = Math.min(Math.round((processed / cards.length) * 100), 100);
   }
 
   return {
-    scannedAt: result.response.scannedAt,
-    total: result.response.total,
-    safeToDelete: result.response.safeToDelete || [],
-    maybeInvalid: result.response.maybeInvalid || [],
-    skipped: result.response.skipped || []
+    scannedAt: new Date().toISOString(),
+    total: cards.length,
+    safeToDelete: mergedSafe,
+    maybeInvalid: mergedMaybe,
+    skipped: mergedSkipped
   };
 }
 
@@ -411,20 +540,40 @@ function toggleSelectAll(group) {
     selectedSafeIds.value = allSafeSelected.value ? [] : safeToDelete.value.map(item => item.id);
     return;
   }
-  selectedMaybeIds.value = allMaybeSelected.value ? [] : maybeInvalid.value.map(item => item.id);
+  if (group === 'cloudflare') {
+    selectedCloudflareIds.value = allCloudflareSelected.value ? [] : cloudflareProtected.value.map(item => item.id);
+    return;
+  }
+  if (group === 'unreachable') {
+    selectedUnreachableIds.value = allUnreachableSelected.value ? [] : unreachableItems.value.map(item => item.id);
+    return;
+  }
+  selectedManualIds.value = allManualSelected.value ? [] : manualReviewItems.value.map(item => item.id);
 }
 
 function resetSelections() {
   selectedSafeIds.value = [];
-  selectedMaybeIds.value = [];
+  selectedCloudflareIds.value = [];
+  selectedUnreachableIds.value = [];
+  selectedManualIds.value = [];
+}
+
+function classifyMaybeInvalid(items = []) {
+  return {
+    cloudflare: items.filter(item => item.subtype === 'cloudflare'),
+    unreachable: items.filter(item => item.subtype === 'unreachable'),
+    manualReview: items.filter(item => item.subtype === 'manual_review' || !item.subtype)
+  };
 }
 
 function refreshSummary(total = summary.value?.total || 0, skippedCount = skipped.value.length) {
   summary.value = {
     total,
-    valid: Math.max(total - safeToDelete.value.length - maybeInvalid.value.length - skippedCount, 0),
+    valid: Math.max(total - safeToDelete.value.length - cloudflareProtected.value.length - unreachableItems.value.length - manualReviewItems.value.length - skippedCount, 0),
     safeToDelete: safeToDelete.value.length,
-    maybeInvalid: maybeInvalid.value.length,
+    cloudflare: cloudflareProtected.value.length,
+    unreachable: unreachableItems.value.length,
+    manualReview: manualReviewItems.value.length,
     skipped: skippedCount
   };
 }
@@ -432,7 +581,10 @@ function refreshSummary(total = summary.value?.total || 0, skippedCount = skippe
 function applyDetectionSnapshot(data) {
   scannedAt.value = data.scannedAt || '';
   safeToDelete.value = data.safeToDelete || [];
-  maybeInvalid.value = data.maybeInvalid || [];
+  const classified = classifyMaybeInvalid(data.maybeInvalid || []);
+  cloudflareProtected.value = classified.cloudflare;
+  unreachableItems.value = classified.unreachable;
+  manualReviewItems.value = classified.manualReview;
   skipped.value = data.skipped || [];
   refreshSummary(data.total || 0, skipped.value.length);
   resetSelections();
@@ -445,10 +597,14 @@ async function collectDetectionResults(cards, progressPrefix = '正在检测') {
 
 function removeDetectedItemsLocally(cardIds) {
   safeToDelete.value = safeToDelete.value.filter(item => !cardIds.includes(item.id));
-  maybeInvalid.value = maybeInvalid.value.filter(item => !cardIds.includes(item.id));
+  cloudflareProtected.value = cloudflareProtected.value.filter(item => !cardIds.includes(item.id));
+  unreachableItems.value = unreachableItems.value.filter(item => !cardIds.includes(item.id));
+  manualReviewItems.value = manualReviewItems.value.filter(item => !cardIds.includes(item.id));
   skipped.value = skipped.value.filter(item => !cardIds.includes(item.id));
   selectedSafeIds.value = selectedSafeIds.value.filter(id => !cardIds.includes(id));
-  selectedMaybeIds.value = selectedMaybeIds.value.filter(id => !cardIds.includes(id));
+  selectedCloudflareIds.value = selectedCloudflareIds.value.filter(id => !cardIds.includes(id));
+  selectedUnreachableIds.value = selectedUnreachableIds.value.filter(id => !cardIds.includes(id));
+  selectedManualIds.value = selectedManualIds.value.filter(id => !cardIds.includes(id));
   refreshSummary();
 }
 
@@ -461,10 +617,15 @@ function mergeRecheckResults(data, checkedIds) {
     ...(data.safeToDelete || [])
   ].sort((a, b) => b.id - a.id);
 
-  maybeInvalid.value = [
-    ...maybeInvalid.value.filter(item => !checkedIds.includes(item.id)),
-    ...(data.maybeInvalid || [])
-  ].sort((a, b) => b.id - a.id);
+  const existingMaybe = [
+    ...cloudflareProtected.value,
+    ...unreachableItems.value,
+    ...manualReviewItems.value
+  ].filter(item => !checkedIds.includes(item.id));
+  const combinedMaybe = classifyMaybeInvalid([...existingMaybe, ...(data.maybeInvalid || [])]);
+  cloudflareProtected.value = combinedMaybe.cloudflare.sort((a, b) => b.id - a.id);
+  unreachableItems.value = combinedMaybe.unreachable.sort((a, b) => b.id - a.id);
+  manualReviewItems.value = combinedMaybe.manualReview.sort((a, b) => b.id - a.id);
 
   if (validIds.size > 0) {
     errorMsg.value = `已重新检测 ${checkedIds.length} 项，其中 ${validIds.size} 项恢复正常，已从结果中移除。`;
@@ -475,13 +636,16 @@ function mergeRecheckResults(data, checkedIds) {
   refreshSummary();
 
   selectedSafeIds.value = selectedSafeIds.value.filter(id => !checkedIds.includes(id));
-  selectedMaybeIds.value = selectedMaybeIds.value.filter(id => !checkedIds.includes(id));
+  selectedCloudflareIds.value = selectedCloudflareIds.value.filter(id => !checkedIds.includes(id));
+  selectedUnreachableIds.value = selectedUnreachableIds.value.filter(id => !checkedIds.includes(id));
+  selectedManualIds.value = selectedManualIds.value.filter(id => !checkedIds.includes(id));
 }
 
 async function handleDetectInvalidLinks() {
   detecting.value = true;
   errorMsg.value = '';
   detectProgressText.value = '正在获取卡片列表...';
+  detectProgressPercent.value = 0;
   try {
     const cardsRes = await getAllCards(true);
     const allCards = Object.values(cardsRes.data?.cardsByCategory || {}).flat().filter(Boolean);
@@ -493,9 +657,10 @@ async function handleDetectInvalidLinks() {
 
     applyDetectionSnapshot(await collectDetectionResults(allCards, '正在检测'));
   } catch (error) {
-    errorMsg.value = error.response?.data?.error || '检测失效链接失败';
+    errorMsg.value = error.response?.data?.error || error.message || '检测失效链接失败';
   } finally {
     detectProgressText.value = '';
+    detectProgressPercent.value = 0;
     detecting.value = false;
   }
 }
@@ -517,26 +682,46 @@ async function removeCards(cardIds, confirmMessage) {
 }
 
 async function recheckSelected(group) {
-  const source = group === 'safe' ? safeToDelete.value : maybeInvalid.value;
-  const selectedIds = group === 'safe' ? [...selectedSafeIds.value] : [...selectedMaybeIds.value];
+  const source = group === 'safe'
+    ? safeToDelete.value
+    : group === 'cloudflare'
+      ? cloudflareProtected.value
+      : group === 'unreachable'
+        ? unreachableItems.value
+        : manualReviewItems.value;
+  const selectedIds = group === 'safe'
+    ? [...selectedSafeIds.value]
+    : group === 'cloudflare'
+      ? [...selectedCloudflareIds.value]
+      : group === 'unreachable'
+        ? [...selectedUnreachableIds.value]
+        : [...selectedManualIds.value];
   if (selectedIds.length === 0) return;
 
   detecting.value = true;
   errorMsg.value = '';
+  detectProgressPercent.value = 0;
   try {
     const cardsToRecheck = source.filter(item => selectedIds.includes(item.id));
     const data = await collectDetectionResults(cardsToRecheck, '正在复检');
     mergeRecheckResults(data, selectedIds);
   } catch (error) {
-    errorMsg.value = error.response?.data?.error || '重新检测失败';
+    errorMsg.value = error.response?.data?.error || error.message || '重新检测失败';
   } finally {
     detectProgressText.value = '';
+    detectProgressPercent.value = 0;
     detecting.value = false;
   }
 }
 
 async function removeSelected(group) {
-  const ids = group === 'safe' ? selectedSafeIds.value : selectedMaybeIds.value;
+  const ids = group === 'safe'
+    ? selectedSafeIds.value
+    : group === 'cloudflare'
+      ? selectedCloudflareIds.value
+      : group === 'unreachable'
+        ? selectedUnreachableIds.value
+        : selectedManualIds.value;
   const message = `确定要删除选中的 ${ids.length} 张卡片吗？此操作不可撤销。`;
   await removeCards(ids, message);
 }
@@ -610,6 +795,39 @@ async function removeAllSafeToDelete() {
   color: #6b7280;
   font-size: 13px;
   margin-bottom: 18px;
+}
+
+.progress-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06);
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: #374151;
+  font-size: 14px;
+}
+
+.progress-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2563eb 0%, #06b6d4 100%);
+  transition: width 0.25s ease;
 }
 
 .result-section {
