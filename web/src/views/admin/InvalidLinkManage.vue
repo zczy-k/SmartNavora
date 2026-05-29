@@ -184,6 +184,8 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const DETECT_CONCURRENCY = 8;
+
 async function tryOpaqueFetch(url, method, timeout = 15000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -364,15 +366,26 @@ async function collectDetectionResults(cards, progressPrefix = '正在检测') {
   const mergedSafe = [];
   const mergedMaybe = [];
   const mergedSkipped = [];
+  let completed = 0;
+  let cursor = 0;
 
-  for (let i = 0; i < cards.length; i++) {
-    detectProgressText.value = `${progressPrefix} ${i + 1}/${cards.length}...`;
-    const result = await checkUrlFromBrowser(cards[i]);
+  async function worker() {
+    while (cursor < cards.length) {
+      const currentIndex = cursor;
+      cursor += 1;
 
-    if (result.bucket === 'safe_to_delete') mergedSafe.push(result);
-    else if (result.bucket === 'maybe_invalid') mergedMaybe.push(result);
-    else if (result.bucket === 'skipped') mergedSkipped.push(result);
+      const result = await checkUrlFromBrowser(cards[currentIndex]);
+      completed += 1;
+      detectProgressText.value = `${progressPrefix} ${completed}/${cards.length}...`;
+
+      if (result.bucket === 'safe_to_delete') mergedSafe.push(result);
+      else if (result.bucket === 'maybe_invalid') mergedMaybe.push(result);
+      else if (result.bucket === 'skipped') mergedSkipped.push(result);
+    }
   }
+
+  const workerCount = Math.min(DETECT_CONCURRENCY, cards.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   return {
     scannedAt: new Date().toISOString(),
@@ -381,6 +394,15 @@ async function collectDetectionResults(cards, progressPrefix = '正在检测') {
     maybeInvalid: mergedMaybe.sort((a, b) => b.id - a.id),
     skipped: mergedSkipped.sort((a, b) => b.id - a.id)
   };
+}
+
+function removeDetectedItemsLocally(cardIds) {
+  safeToDelete.value = safeToDelete.value.filter(item => !cardIds.includes(item.id));
+  maybeInvalid.value = maybeInvalid.value.filter(item => !cardIds.includes(item.id));
+  skipped.value = skipped.value.filter(item => !cardIds.includes(item.id));
+  selectedSafeIds.value = selectedSafeIds.value.filter(id => !cardIds.includes(id));
+  selectedMaybeIds.value = selectedMaybeIds.value.filter(id => !cardIds.includes(id));
+  refreshSummary();
 }
 
 function mergeRecheckResults(data, checkedIds) {
@@ -439,7 +461,7 @@ async function removeCards(cardIds, confirmMessage) {
   errorMsg.value = '';
   try {
     await removeManyCards(cardIds);
-    await handleDetectInvalidLinks();
+    removeDetectedItemsLocally(cardIds);
   } catch (error) {
     errorMsg.value = error.response?.data?.error || '删除卡片失败';
   } finally {
