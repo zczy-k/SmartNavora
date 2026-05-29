@@ -104,11 +104,17 @@
         </div>
         
         <div class="toolbar-actions">
-          <button v-if="cloudNeedsSync" class="toolbar-icon-btn cloud-sync-warning" @click="showBackupSyncModal = true" title="云端备份落后于本地数据，点击同步">
+          <button
+            class="toolbar-icon-btn cloud-sync-indicator"
+            :class="cloudSyncIndicatorClass"
+            @click="handleCloudStatusClick"
+            :title="cloudSyncIndicatorTitle"
+          >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
-              <line x1="12" y1="9" x2="12" y2="15"/>
-              <line x1="9" y1="12" x2="15" y2="12"/>
+              <line v-if="cloudSyncStatus !== 'synced'" x1="12" y1="9" x2="12" y2="15"/>
+              <line v-if="cloudSyncStatus !== 'synced'" x1="9" y1="12" x2="15" y2="12"/>
+              <path v-else d="M9 12l2 2 4-4"/>
             </svg>
           </button>
           <button v-if="allTags.length > 0" class="toolbar-icon-btn" :class="{ active: selectedTagIds.length > 0 }" @click="showTagPanel = !showTagPanel" title="标签筛选">
@@ -1175,6 +1181,9 @@ const pendingAction = ref(null); // 待执行的操作回调
 
 // 云端备份同步状态
 const cloudNeedsSync = ref(false);
+const cloudSyncStatus = ref('checking');
+const cloudLocalVersion = ref(null);
+const cloudRemoteVersion = ref(null);
 const showBackupSyncModal = ref(false);
 const backupSyncPassword = ref('');
 const backupSyncLoading = ref(false);
@@ -3433,14 +3442,79 @@ function closePasswordModal() {
 async function checkCloudVersion() {
   try {
     if (!hasLocalToken()) {
-      await tryRestoreAuthFromSavedPassword();
+      const restored = await tryRestoreAuthFromSavedPassword();
+      if (!restored) {
+        cloudNeedsSync.value = false;
+        cloudSyncStatus.value = 'auth_required';
+        cloudLocalVersion.value = null;
+        cloudRemoteVersion.value = null;
+        return;
+      }
     }
     const res = await checkWebdavVersion();
     const data = res.data || {};
+    cloudSyncStatus.value = data.status || 'unknown';
     cloudNeedsSync.value = data.needsSync === true;
+    cloudLocalVersion.value = data.localVersion ?? null;
+    cloudRemoteVersion.value = data.cloudVersion ?? null;
   } catch (e) {
     cloudNeedsSync.value = false;
+    cloudSyncStatus.value = 'error';
+    cloudLocalVersion.value = null;
+    cloudRemoteVersion.value = null;
   }
+}
+
+const cloudSyncIndicatorClass = computed(() => {
+  if (cloudSyncStatus.value === 'synced') return 'is-green';
+  if (['checking', 'not_configured', 'auth_required'].includes(cloudSyncStatus.value)) return 'is-neutral';
+  return 'is-red';
+});
+
+const cloudSyncIndicatorTitle = computed(() => {
+  if (cloudSyncStatus.value === 'synced') {
+    return `云端备份已同步（本地 ${cloudLocalVersion.value ?? '-'} / 云端 ${cloudRemoteVersion.value ?? '-'}）`;
+  }
+  if (cloudSyncStatus.value === 'outdated') {
+    return `云端备份落后于本地（本地 ${cloudLocalVersion.value ?? '-'} / 云端 ${cloudRemoteVersion.value ?? '-'}），点击手动云备份`;
+  }
+  if (cloudSyncStatus.value === 'missing_cloud_backup') {
+    return '云端还没有版本记录，点击手动云备份';
+  }
+  if (cloudSyncStatus.value === 'not_configured') {
+    return '尚未配置 WebDAV';
+  }
+  if (cloudSyncStatus.value === 'auth_required') {
+    return '需要管理权限才能检测云端备份状态';
+  }
+  if (cloudSyncStatus.value === 'cloud_ahead') {
+    return `云端版本高于本地（本地 ${cloudLocalVersion.value ?? '-'} / 云端 ${cloudRemoteVersion.value ?? '-'}）`;
+  }
+  return '云端版本状态检测失败';
+});
+
+function handleCloudStatusClick() {
+  if (cloudSyncStatus.value === 'outdated' || cloudSyncStatus.value === 'missing_cloud_backup') {
+    showBackupSyncModal.value = true;
+    return;
+  }
+  if (cloudSyncStatus.value === 'synced') {
+    showToastMessage('云端备份已是最新', 'success');
+    return;
+  }
+  if (cloudSyncStatus.value === 'not_configured') {
+    showToastMessage('请先在后台配置 WebDAV', 'info');
+    return;
+  }
+  if (cloudSyncStatus.value === 'auth_required') {
+    showToastMessage('请先进行一次管理密码验证，之后才能检测云端备份状态', 'info', 3500);
+    return;
+  }
+  if (cloudSyncStatus.value === 'cloud_ahead') {
+    showToastMessage('云端版本高于本地，请确认是否需要先恢复云备份', 'info', 3500);
+    return;
+  }
+  showToastMessage('云端版本检测失败，请稍后重试', 'error');
 }
 
 // 同步备份到云端
@@ -5153,15 +5227,37 @@ async function saveCardEdit() {
   color: #fff;
 }
 
-.toolbar-icon-btn.cloud-sync-warning {
+.toolbar-icon-btn.cloud-sync-indicator.is-green {
+  background: rgba(22, 163, 74, 0.88);
+  color: #fff;
+  border-color: rgba(22, 163, 74, 0.92);
+}
+
+.toolbar-icon-btn.cloud-sync-indicator.is-green:hover {
+  background: #16a34a;
+  transform: scale(1.08);
+}
+
+.toolbar-icon-btn.cloud-sync-indicator.is-red {
   background: rgba(220, 38, 38, 0.85);
   color: #fff;
   border-color: rgba(220, 38, 38, 0.9);
   animation: cloud-sync-pulse 2s ease-in-out infinite;
 }
 
-.toolbar-icon-btn.cloud-sync-warning:hover {
+.toolbar-icon-btn.cloud-sync-indicator.is-red:hover {
   background: #dc2626;
+  transform: scale(1.08);
+}
+
+.toolbar-icon-btn.cloud-sync-indicator.is-neutral {
+  background: rgba(107, 114, 128, 0.78);
+  color: #fff;
+  border-color: rgba(107, 114, 128, 0.88);
+}
+
+.toolbar-icon-btn.cloud-sync-indicator.is-neutral:hover {
+  background: #6b7280;
   transform: scale(1.08);
 }
 

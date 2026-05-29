@@ -1412,17 +1412,21 @@ router.get('/webdav/version-check', authMiddleware, async (req, res) => {
     const client = await getWebDAVClient();
 
     if (!client) {
-      return res.json({ success: true, needsSync: false, localVersion, cloudVersion: null, reason: 'webdav_not_configured' });
+      return res.json({ success: true, status: 'not_configured', needsSync: false, localVersion, cloudVersion: null, reason: 'webdav_not_configured' });
     }
 
     try {
       const metaContent = await client.getFileContents('/SmartNavora-Backups/_latest-version.json', { format: 'text' });
       const meta = JSON.parse(metaContent);
-      const cloudVersion = meta.dataVersion || 0;
+      const cloudVersion = Number(meta.dataVersion || 0);
 
-      return res.json({ success: true, needsSync: localVersion > cloudVersion, localVersion, cloudVersion });
+      let status = 'synced';
+      if (localVersion > cloudVersion) status = 'outdated';
+      else if (localVersion < cloudVersion) status = 'cloud_ahead';
+
+      return res.json({ success: true, status, needsSync: localVersion > cloudVersion, localVersion, cloudVersion });
     } catch (e) {
-      return res.json({ success: true, needsSync: false, localVersion, cloudVersion: null, reason: 'no_cloud_version' });
+      return res.json({ success: true, status: 'missing_cloud_backup', needsSync: true, localVersion, cloudVersion: null, reason: 'no_cloud_version' });
     }
   } catch (error) {
     console.error('版本对比失败:', error);
