@@ -41,6 +41,9 @@ Thumbs.db
 config/.jwt-secret
 config/.webdav-config.json
 
+# Runtime config (auto-generated, may contain user credentials)
+config/autoBackup.json
+
 # IDE
 .vscode/
 .idea/

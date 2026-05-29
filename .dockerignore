@@ -43,6 +43,9 @@ tests/
 *.test.js
 *.spec.js
 
+# 运行时配置文件（可能包含用户凭据）
+config/autoBackup.json
+
 # 数据库文件（本地开发用）
 database/*.db
 database/*.db-journal
