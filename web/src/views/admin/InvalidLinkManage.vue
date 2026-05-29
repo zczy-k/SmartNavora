@@ -209,7 +209,26 @@ async function checkUrlFromBrowser(card) {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
-    const response = await fetch(url, { method: 'HEAD', signal: controller.signal });
+    let response;
+    try {
+      response = await fetch(url, { method: 'HEAD', mode: 'cors', signal: controller.signal });
+    } catch (corsError) {
+      if (corsError.name === 'AbortError') throw corsError;
+      // CORS 拦截 → fallback no-cors 做连通性验证
+      clearTimeout(timeoutId);
+      const c2 = new AbortController();
+      const t2 = setTimeout(() => c2.abort(), 15000);
+      try {
+        const opaque = await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: c2.signal });
+        clearTimeout(t2);
+        if (opaque.type === 'opaque') {
+          return { id, title, url, menuName, subMenuName, bucket: 'valid', reason: '服务器可访问', detail: 'CORS 限制无法获取详细状态码', statusCode: null };
+        }
+      } catch {
+        clearTimeout(t2);
+        throw corsError; // no-cors 也失败，抛出原始错误
+      }
+    }
     clearTimeout(timeoutId);
 
     if (response.type === 'opaque') {
@@ -229,7 +248,7 @@ async function checkUrlFromBrowser(card) {
       const controller2 = new AbortController();
       const timeoutId2 = setTimeout(() => controller2.abort(), 15000);
       try {
-        const retryResponse = await fetch(url, { method: 'GET', signal: controller2.signal });
+        const retryResponse = await fetch(url, { method: 'GET', mode: 'cors', signal: controller2.signal });
         clearTimeout(timeoutId2);
         if (retryResponse.type !== 'opaque') {
           const rs = retryResponse.status;
