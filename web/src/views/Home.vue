@@ -2752,6 +2752,7 @@ async function handleSearch() {
     const url = selectedEngine.value.url(searchQuery.value);
     window.open(url, '_blank');
   }
+  searchQuery.value = '';
 }
 
 function syncCurrentCardLists(mutator) {
