@@ -470,9 +470,7 @@ function isCardSelected(card) {
 }
 
 .link-item {
-  background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(255, 255, 255, 0.22);
   border-radius: 18px;
   min-height: 92px;
   height: 92px;
@@ -483,11 +481,14 @@ function isCardSelected(card) {
   position: relative;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: 
+  box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.08),
     0 1px 3px rgba(0, 0, 0, 0.05),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              background 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
@@ -498,10 +499,10 @@ function isCardSelected(card) {
 }
 
 .link-item:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.32);
   transform: translateY(-6px) scale(1.03);
   border-color: rgba(255, 255, 255, 0.4);
-  box-shadow: 
+  box-shadow:
     0 16px 40px rgba(0, 0, 0, 0.15),
     0 4px 12px rgba(0, 0, 0, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
@@ -510,21 +511,21 @@ function isCardSelected(card) {
 .link-item:active {
   transform: translateY(-2px) scale(0.97);
   transition: transform 0.08s ease;
-  background: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.36);
 }
 
 @media (hover: none) {
   .link-item:hover {
     transform: none;
-    background: rgba(255, 255, 255, 0.18);
-    box-shadow: 
+    background: rgba(255, 255, 255, 0.22);
+    box-shadow:
       0 4px 20px rgba(0, 0, 0, 0.08),
       0 1px 3px rgba(0, 0, 0, 0.05),
       inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
   .link-item:active {
     transform: scale(0.96);
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.34);
     box-shadow: 
       0 2px 8px rgba(0, 0, 0, 0.12),
       inset 0 1px 0 rgba(255, 255, 255, 0.15);
