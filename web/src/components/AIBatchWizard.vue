@@ -708,6 +708,7 @@ textarea.input { resize: vertical; }
 .diff-new.error { color: #ef4444; }
 
 .execute-confirm { text-align: center; padding: 20px; pointer-events: none; }
+.execute-confirm .btn { pointer-events: auto; }
 .execute-confirm p { margin: 8px 0; color: #374151; }
 .execute-confirm strong { color: #3b82f6; }
 

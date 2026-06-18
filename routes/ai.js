@@ -1907,18 +1907,25 @@ router.post('/preview', authMiddleware, async (req, res) => {
     
     const cards = await db.getCardsByIds(cardIds);
     const existingTags = types.includes('tags') ? await db.getAllTagNames() : [];
+
+    // 并行抓取所有卡片的元数据（减少总耗时，避免串行累积超时）
+    const metadataResults = await Promise.allSettled(
+      cards.map(card => fetchMetadata(card.url))
+    );
+    const metadataMap = new Map();
+    cards.forEach((card, i) => {
+      if (metadataResults[i].status === 'fulfilled') {
+        metadataMap.set(card.id, metadataResults[i].value);
+      }
+    });
+
     const previews = [];
-    
+
     for (const card of cards) {
       const preview = { cardId: card.id, title: card.title, url: card.url, fields: {} };
 
-      // 预览时抓取元数据（失败不影响预览）
-      let previewMetadata = null;
-      try {
-        previewMetadata = await fetchMetadata(card.url);
-      } catch (e) {
-        // 静默失败
-      }
+      // 使用预抓取的元数据（失败为 null，不影响预览）
+      const previewMetadata = metadataMap.get(card.id) || null;
 
       // 预览时强制使用 overwrite 模式，确保总是展示 AI 将生成的内容
       const previewStrategy = { ...strategy, mode: 'overwrite' };
