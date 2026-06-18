@@ -1,27 +1,28 @@
 <template>
     <div ref="cardGridRef" class="container card-grid" :class="{ 'selection-mode': selectionMode }">
       <div v-for="(card, index) in cards" :key="card.id"
-           class="link-item" 
-           :class="{ 
+           class="link-item"
+           :class="{
              'selected': isCardSelected(card)
            }"
            :data-card-id="card.id"
            draggable="false"
            @contextmenu.prevent="handleContextMenu($event, card)"
-           @click="handleCardClick($event, card)">
-          <a :href="selectionMode ? 'javascript:void(0)' : card.url" 
-             :target="selectionMode ? '' : '_blank'" 
-             :title="getTooltip(card)" 
+           @click="handleCardClick($event, card)"
+           @mouseenter="hoveredCardId = card.id"
+           @mouseleave="hoveredCardId = null">
+          <a :href="selectionMode ? 'javascript:void(0)' : card.url"
+             :target="selectionMode ? '' : '_blank'"
              draggable="false"
              @click="handleLinkClick($event, card)"
              @contextmenu.prevent
              class="card-link">
-            <img 
-              class="link-icon" 
+            <img
+              class="link-icon"
               :ref="(el) => el && setupIconLazyLoad(el, card)"
               :src="placeholderIcon"
               :data-url="card.url"
-              alt="" 
+              alt=""
               loading="lazy"
               decoding="async"
               draggable="false"
@@ -30,6 +31,9 @@
             <span class="link-text" @contextmenu.prevent>{{ truncate(card.title) }}</span>
           </a>
         <div v-if="isCardSelected(card)" class="card-selected-badge">✓</div>
+        <div v-if="hoveredCardId === card.id && !selectionMode" class="card-tooltip">
+          <div class="tooltip-content">{{ getTooltip(card) }}</div>
+        </div>
       </div>
     
     <Teleport to="body">
@@ -138,6 +142,7 @@ const contextMenuVisible = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
 const contextMenuCard = ref(null);
+const hoveredCardId = ref(null);
 
 async function handleContextMenu(event, card) {
   contextMenuCard.value = card;
@@ -479,7 +484,6 @@ function isCardSelected(card) {
   justify-content: center;
   align-items: center;
   position: relative;
-  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.25);
   box-shadow:
     0 4px 20px rgba(0, 0, 0, 0.08),
@@ -502,6 +506,7 @@ function isCardSelected(card) {
   background: rgba(255, 255, 255, 0.32);
   transform: translateY(-6px) scale(1.03);
   border-color: rgba(255, 255, 255, 0.4);
+  z-index: 10;
   box-shadow:
     0 16px 40px rgba(0, 0, 0, 0.15),
     0 4px 12px rgba(0, 0, 0, 0.1),
@@ -512,6 +517,42 @@ function isCardSelected(card) {
   transform: translateY(-2px) scale(0.97);
   transition: transform 0.08s ease;
   background: rgba(255, 255, 255, 0.36);
+}
+
+/* 卡片悬浮提示 - 居中显示在卡片正下方 */
+.card-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 6px;
+  z-index: 100;
+  pointer-events: none;
+  white-space: pre-line;
+}
+
+.card-tooltip .tooltip-content {
+  background: rgba(20, 20, 30, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  max-width: 260px;
+  word-break: break-all;
+  text-align: left;
+}
+
+.link-item:hover .card-tooltip {
+  animation: tooltipFadeIn 0.2s ease 0.3s both;
+}
+
+@keyframes tooltipFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 @media (hover: none) {
@@ -526,9 +567,12 @@ function isCardSelected(card) {
   .link-item:active {
     transform: scale(0.96);
     background: rgba(255, 255, 255, 0.34);
-    box-shadow: 
+    box-shadow:
       0 2px 8px rgba(0, 0, 0, 0.12),
       inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+  .card-tooltip {
+    display: none;
   }
 }
 
