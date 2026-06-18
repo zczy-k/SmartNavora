@@ -3517,9 +3517,7 @@ async function handleBackupSync() {
   try {
     const authRes = await verifyPassword(backupSyncPassword.value);
     localStorage.setItem('token', authRes.data.token);
-    await axios.post('/api/backup/webdav/backup', {}, {
-      headers: { Authorization: `Bearer ${authRes.data.token}` }
-    });
+    await api.post('/api/backup/webdav/backup', {});
     backupSyncSuccess.value = '云备份同步成功！';
     await checkCloudVersion();
     if (!cloudNeedsSync.value) {
@@ -4340,7 +4338,7 @@ async function handleEditCard(card) {
 // 检查 AI 是否已配置（使用公开接口，无需认证）
 async function checkAIConfig() {
   try {
-    const res = await axios.get('/api/ai/status');
+    const res = await api.get('/api/ai/status');
     aiConfigured.value = res.data.success && res.data.data.available;
   } catch (e) {
     aiConfigured.value = false;
