@@ -108,17 +108,8 @@
         <!-- 第三步：预览 -->
         <div v-if="step === 2" class="step-content">
           <div class="preview-actions">
-            <div class="preview-count-selector">
-              <label>预览数量：</label>
-              <select v-model="previewCount" class="input sm" :disabled="previewing">
-                <option :value="1">1 个</option>
-                <option :value="3">3 个</option>
-                <option :value="5">5 个</option>
-                <option :value="Math.min(10, filteredCards.length)">{{ Math.min(10, filteredCards.length) }} 个</option>
-              </select>
-            </div>
             <button class="btn primary" @click="runPreview" :disabled="previewing || filteredCards.length === 0">
-              {{ previewing ? `⏳ 生成中 (${previewProgress}/${previewCount})...` : '🔮 试运行预览' }}
+              {{ previewing ? '⏳ 生成中...' : '🔮 试运行预览' }}
             </button>
           </div>
 
@@ -296,8 +287,6 @@ export default {
       strategy: { types: ['name', 'description'], mode: 'fill', style: 'default', customPrompt: '' },
       previews: [],
       previewing: false,
-      previewCount: 3,
-      previewProgress: 0,
       taskDone: false,
       taskStartTime: null,
       taskEndTime: null,
@@ -500,19 +489,15 @@ export default {
     async runPreview() {
       this.previewing = true;
       this.previews = [];
-      this.previewProgress = 0;
       try {
-        const count = Math.min(this.previewCount, this.filteredCards.length);
-        const shuffled = [...this.filteredCards].sort(() => Math.random() - 0.5);
-        const sampleIds = shuffled.slice(0, count).map(c => c.id);
-        this.previewProgress = 1;
+        const idx = Math.floor(Math.random() * this.filteredCards.length);
+        const sampleId = this.filteredCards[idx].id;
         const { data } = await aiPreview({
-          cardIds: sampleIds,
+          cardIds: [sampleId],
           types: this.strategy.types,
           strategy: { mode: this.strategy.mode, style: this.strategy.style, customPrompt: this.strategy.customPrompt }
         });
         this.previews = data.previews || [];
-        this.previewProgress = count;
       } catch (e) {
         alert('预览失败: ' + (e.response?.data?.message || e.message));
       }
@@ -693,8 +678,6 @@ textarea.input { resize: vertical; }
 .tag-checkbox:hover .tag-name { opacity: 0.8; }
 
 .preview-actions { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
-.preview-count-selector { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-.preview-count-selector label { color: #6b7280; pointer-events: none; }
 .preview-hint { text-align: center; color: #6b7280; padding: 40px 20px; pointer-events: none; }
 .preview-list { display: flex; flex-direction: column; gap: 12px; }
 .preview-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; -webkit-tap-highlight-color: transparent; }
