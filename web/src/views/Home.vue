@@ -413,7 +413,7 @@
             <div class="remember-password-wrapper">
               <label>
                 <input type="checkbox" v-model="rememberPassword" />
-                <span>记住密码（30天）</span>
+                <span>信任此设备</span>
               </label>
             </div>
             <p v-if="batchError" class="batch-error">{{ batchError }}</p>
@@ -589,6 +589,12 @@
                 <path d="M2 14l4-4 3 3 5-5 4 4v3a2 2 0 01-2 2H4a2 2 0 01-2-2v-1z" fill="currentColor" opacity="0.3"/>
               </svg>
             </button>
+            <button v-if="isDeviceTrusted()" @click="revokeTrust" class="footer-tool-btn" title="取消信任此设备">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M10 2L3 6v5c0 4.42 2.98 8.55 7 9 4.02-.45 7-4.58 7-9V6l-7-4z"/>
+                <path d="M7 10l2 2 4-4" stroke-width="1.8"/>
+              </svg>
+            </button>
           </div>
         </div>
         <p class="copyright">Copyright © 2025 SmartNavora | <a href="https://github.com/zczy-k/SmartNavora" target="_blank" class="footer-link">Powered by zczy-k</a></p>
@@ -643,19 +649,10 @@
           </div>
           <div class="remember-password-wrapper enhanced">
             <label class="remember-checkbox">
-              <input type="checkbox" v-model="rememberAuthPassword" @change="onRememberChange" />
-              <span class="checkbox-label">记住验证</span>
+              <input type="checkbox" v-model="trustDevice" />
+              <span class="checkbox-label">信任此设备</span>
             </label>
-            <select 
-              v-if="rememberAuthPassword" 
-              v-model="rememberDuration" 
-              class="remember-duration-select"
-            >
-              <option value="session">仅本次会话</option>
-              <option value="1day">1天</option>
-              <option value="7days">7天</option>
-              <option value="30days">30天</option>
-            </select>
+            <span v-if="isDeviceTrusted()" class="trust-status">已信任</span>
           </div>
           <transition name="error-fade">
             <p v-if="authError" class="batch-error auth-error">{{ authError }}</p>
@@ -1046,17 +1043,13 @@
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch } from 'vue';
-import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion } from '../api';
-import axios from 'axios';
+import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, instance as apiInstance } from '../api';
 
-// AI API 辅助函数
-function authHeaders() {
-  const token = localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+// AI API 调用（使用 api.js 的 instance 以确保全局 401 拦截器生效）
 const api = {
-  get: (url) => axios.get(url, { headers: authHeaders() }),
-  post: (url, data) => axios.post(url, data, { headers: authHeaders() })
+  get: (url) => apiInstance.get(url.replace(/^\/api/, '')),
+  post: (url, data) => apiInstance.post(url.replace(/^\/api/, ''), data),
+  put: (url, data) => apiInstance.put(url.replace(/^\/api/, ''), data)
 };
 import MenuBar from '../components/MenuBar.vue';
 import MobileDrawer from '../components/MobileDrawer.vue';
@@ -1180,11 +1173,12 @@ const authPassword = ref('');
 const authLoading = ref(false);
 const authError = ref('');
 const authShake = ref(false);
-const rememberAuthPassword = ref(false);
-const rememberDuration = ref('7days');
+const trustDevice = ref(false);
 const showAuthPasswordText = ref(false);
 const authPasswordInput = ref(null);
 const pendingAction = ref(null); // 待执行的操作回调
+const pendingActionResolve = ref(null); // 401 拦截器等待验证完成的 resolve
+const pendingActionReject = ref(null); // 401 拦截器等待验证完成的 reject
 
 // 云端备份同步状态
 const cloudNeedsSync = ref(false);
@@ -1198,12 +1192,14 @@ const backupSyncError = ref('');
 const backupSyncSuccess = ref('');
 let versionCheckTimer = null;
 
-// 记住时长配置
-const REMEMBER_DURATIONS = {
-  'session': 0,
-  '1day': 24 * 60 * 60 * 1000,
-  '7days': 7 * 24 * 60 * 60 * 1000,
-  '30days': 30 * 24 * 60 * 60 * 1000
+// 检查当前设备是否已信任
+const isDeviceTrusted = () => {
+  const savedData = localStorage.getItem('nav_password_token');
+  if (!savedData) return false;
+  try {
+    const parsed = JSON.parse(savedData);
+    return !!(parsed?.password);
+  } catch { return false; }
 };
 
 // AI 生成相关状态
@@ -1467,35 +1463,17 @@ function isTagSelected(tagId) {
 
 // 打开添加搜索引擎弹窗(需要先验证密码)
 async function openAddEngineModal() {
-  // 检查是否已登录
-  const token = localStorage.getItem('token');
-  if (!token) {
-    // 没有token，需要先登录
-    const password = prompt('请输入管理员密码以添加搜索引擎：');
-    if (!password) {
-      showEngineDropdown.value = false;
-      return;
-    }
-    
-    try {
-      const res = await login('admin', password);
-      localStorage.setItem('token', res.data.token);
-    } catch (error) {
-      alert('密码错误');
-      showEngineDropdown.value = false;
-      return;
-    }
-  }
-  
-  showAddEngineModal.value = true;
-  engineStep.value = 1;
-  engineError.value = '';
-  engineUrl.value = '';
-  newEngine.value = {
-    name: '',
-    searchUrl: '',
-    keyword: ''
-  };
+  requireAuth(() => {
+    showAddEngineModal.value = true;
+    engineStep.value = 1;
+    engineError.value = '';
+    engineUrl.value = '';
+    newEngine.value = {
+      name: '',
+      searchUrl: '',
+      keyword: ''
+    };
+  });
 }
 
 // 关闭添加搜索引擎弹窗
@@ -1582,41 +1560,28 @@ async function addCustomEngine() {
 // 删除自定义搜索引擎
 async function deleteCustomEngine(engine) {
   if (!confirm(`确定要删除「${engine.label}」搜索引擎吗？`)) return;
-  
-  // 检查是否已登录
-  const token = localStorage.getItem('token');
-  if (!token) {
-    const password = prompt('请输入管理员密码以删除搜索引擎：');
-    if (!password) return;
-    
+
+  requireAuth(async () => {
     try {
-      const res = await login('admin', password);
-      localStorage.setItem('token', res.data.token);
+      await deleteSearchEngine(engine.id);
+
+      // 从列表中移除
+      const index = searchEngines.value.findIndex(e => e.name === engine.name);
+      if (index > -1) {
+        searchEngines.value.splice(index, 1);
+      }
+
+      // 如果删除的是当前选中的引擎，切换到第一个
+      if (selectedEngine.value.name === engine.name) {
+        selectedEngine.value = searchEngines.value[0];
+        selectEngine(searchEngines.value[0]);
+      }
+
+      showToastMessage('删除成功', 'success');
     } catch (error) {
-      alert('密码错误');
-      return;
+      alert('删除失败：' + (error.response?.data?.error || error.message));
     }
-  }
-  
-  try {
-    await deleteSearchEngine(engine.id);
-    
-    // 从列表中移除
-    const index = searchEngines.value.findIndex(e => e.name === engine.name);
-    if (index > -1) {
-      searchEngines.value.splice(index, 1);
-    }
-    
-    // 如果删除的是当前选中的引擎，切换到第一个
-    if (selectedEngine.value.name === engine.name) {
-      selectedEngine.value = searchEngines.value[0];
-      selectEngine(searchEngines.value[0]);
-    }
-    
-    showToastMessage('删除成功', 'success');
-  } catch (error) {
-    alert('删除失败：' + (error.response?.data?.error || error.message));
-  }
+  });
 }
 
 const filteredCards = computed(() => {
@@ -1757,6 +1722,18 @@ const groupedCards = computed(() => {
 });
 
 onMounted(async () => {
+  // 迁移旧格式信任凭据（带 expiry 的旧数据）
+  migrateOldTokenFormat();
+
+  // 注册全局 401 认证挑战回调
+  setAuthChallengeHandler(() => {
+    return new Promise((resolve, reject) => {
+      pendingActionResolve.value = resolve;
+      pendingActionReject.value = reject;
+      showAuthModal(null);
+    });
+  });
+
   // 加载保存的背景设置
   loadBgSetting();
   
@@ -2835,36 +2812,45 @@ function handleEngineIconError(event) {
 async function openBatchAddModal() {
   showBatchAddModal.value = true;
   batchError.value = '';
-  
-  // 检查是否有保存的密码token
+
+  // 检查是否有信任设备的保存密码
   const savedData = localStorage.getItem('nav_password_token');
   if (savedData) {
     try {
-      const { password, expiry, token } = JSON.parse(savedData);
-      if (Date.now() < expiry && token) {
-        // 本地token未过期，先向后端验证是否有效
-        localStorage.setItem('token', token);
+      const parsed = JSON.parse(savedData);
+      if (parsed.password) {
+        // 信任设备，尝试用保存的token验证
+        if (parsed.token) {
+          localStorage.setItem('token', parsed.token);
+        }
         try {
           await verifyToken();
           // token有效，恢复并跳到第二步
-          batchPassword.value = password;
+          batchPassword.value = parsed.password;
           rememberPassword.value = true;
           batchStep.value = 2;
           return;
         } catch (e) {
-          // token无效，清除
-          localStorage.removeItem('token');
-          localStorage.removeItem('nav_password_token');
+          // token无效，尝试用保存的密码重新获取
+          try {
+            const res = await verifyPassword(parsed.password);
+            localStorage.setItem('token', res.data.token);
+            batchPassword.value = parsed.password;
+            rememberPassword.value = true;
+            batchStep.value = 2;
+            return;
+          } catch (e2) {
+            // 密码也失效了，清除
+            localStorage.removeItem('token');
+            localStorage.removeItem('nav_password_token');
+          }
         }
-      } else {
-        // 已过期，清除
-        localStorage.removeItem('nav_password_token');
       }
     } catch (e) {
       localStorage.removeItem('nav_password_token');
     }
   }
-  
+
   // 没有有效token，显示密码验证步骤
   batchStep.value = 1;
 }
@@ -2879,23 +2865,19 @@ function closeBatchAdd() {
   batchLoading.value = false;
 }
 
-// 检查保存的密码
+// 检查保存的密码（信任设备模式）
 function checkSavedPassword() {
   const savedData = localStorage.getItem('nav_password_token');
   if (savedData) {
     try {
-      const { password, expiry, token } = JSON.parse(savedData);
-      if (Date.now() < expiry) {
-        // 密码未过期，自动填充并恢复token
-        batchPassword.value = password;
+      const parsed = JSON.parse(savedData);
+      if (parsed.password) {
+        // 信任设备：恢复密码和token
+        batchPassword.value = parsed.password;
         rememberPassword.value = true;
-        // 如果有保存的token，也恢复它
-        if (token) {
-          localStorage.setItem('token', token);
+        if (parsed.token) {
+          localStorage.setItem('token', parsed.token);
         }
-      } else {
-        // 已过期，清除
-        localStorage.removeItem('nav_password_token');
       }
     } catch (e) {
       localStorage.removeItem('nav_password_token');
@@ -2923,18 +2905,14 @@ async function verifyBatchPassword() {
       throw new Error('验证成功，但未收到 token');
     }
     
-      // 如果选择了记住密码，保存到30天
-      if (rememberPassword.value) {
-        const expiry = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30天
+    // 如果选择了信任此设备，保存密码（不设过期时间）
+    if (rememberPassword.value) {
       localStorage.setItem('nav_password_token', JSON.stringify({
-        password: batchPassword.value,
-        token: response.data.token,
-        expiry
+        password: batchPassword.value
       }));
-    } else {
-      localStorage.removeItem('nav_password_token');
+      localStorage.setItem('nav_trust_device', 'true');
     }
-    
+
     batchStep.value = 2;
   } catch (error) {
     batchError.value = '密码错误，请重试';
@@ -3303,20 +3281,45 @@ async function autoGenerateAIForNewCards(cardIds) {
 
 // ========== 权限验证系统 ==========
 
-// 检查本地是否有token（仅检查存在性，不验证有效性）
+// 迁移旧格式（带 expiry）的信任凭据到新格式（无过期）
+function migrateOldTokenFormat() {
+  const savedData = localStorage.getItem('nav_password_token');
+  if (!savedData) return;
+  try {
+    const parsed = JSON.parse(savedData);
+    if (parsed.password && parsed.expiry !== undefined) {
+      // 旧格式有 expiry 字段，迁移为新格式
+      if (Date.now() < parsed.expiry) {
+        // 未过期的旧凭据，保留密码，去掉 expiry/token/duration
+        const newData = { password: parsed.password };
+        localStorage.setItem('nav_password_token', JSON.stringify(newData));
+        if (parsed.token) localStorage.setItem('token', parsed.token);
+      } else {
+        // 已过期的旧凭据，清除
+        localStorage.removeItem('nav_password_token');
+        localStorage.removeItem('token');
+      }
+    }
+  } catch {
+    localStorage.removeItem('nav_password_token');
+  }
+}
+
+// 检查本地是否有token（信任设备时自动恢复 token）
 function hasLocalToken() {
   const savedData = localStorage.getItem('nav_password_token');
   if (savedData) {
     try {
-      const { token, expiry } = JSON.parse(savedData);
-      if (Date.now() < expiry && token) {
-        localStorage.setItem('token', token);
-        return true;
+      const parsed = JSON.parse(savedData);
+      if (parsed.password) {
+        // 信任设备：如果有保存的 token，恢复到 localStorage.token
+        const token = localStorage.getItem('token');
+        if (!token && parsed.token) {
+          localStorage.setItem('token', parsed.token);
+        }
+        return !!localStorage.getItem('token');
       }
-      localStorage.removeItem('nav_password_token');
-    } catch (e) {
-      localStorage.removeItem('nav_password_token');
-    }
+    } catch { /* ignore */ }
   }
   return !!localStorage.getItem('token');
 }
@@ -3336,23 +3339,17 @@ function showAuthModal(action) {
   authError.value = '';
   authShake.value = false;
   showAuthPasswordText.value = false;
-  
-  // 恢复上次保存的记住设置
-  const savedDuration = localStorage.getItem('nav_remember_duration');
-  if (savedDuration && REMEMBER_DURATIONS.hasOwnProperty(savedDuration)) {
-    rememberDuration.value = savedDuration;
-    rememberAuthPassword.value = savedDuration !== 'session';
-  }
-  
+
+  // 恢复信任设备偏好
+  const savedTrust = localStorage.getItem('nav_trust_device');
+  trustDevice.value = savedTrust === 'true';
+
   const savedAuth = getSavedPasswordToken();
   if (savedAuth) {
     authPassword.value = savedAuth.password;
-    rememberAuthPassword.value = true;
-    if (savedAuth.duration) {
-      rememberDuration.value = savedAuth.duration;
-    }
+    trustDevice.value = true;
   }
-  
+
   // 自动聚焦密码输入框
   nextTick(() => {
     if (authPasswordInput.value) {
@@ -3363,30 +3360,14 @@ function showAuthModal(action) {
   });
 }
 
-// 记住选项变化时保存设置
-function onRememberChange() {
-  if (!rememberAuthPassword.value) {
-    rememberDuration.value = 'session';
-  } else {
-    // 默认7天
-    if (rememberDuration.value === 'session') {
-      rememberDuration.value = '7days';
-    }
-  }
-  localStorage.setItem('nav_remember_duration', rememberDuration.value);
-}
-
+// 获取已保存的信任设备密码
 function getSavedPasswordToken() {
   const savedData = localStorage.getItem('nav_password_token');
   if (!savedData) return null;
 
   try {
     const parsed = JSON.parse(savedData);
-    if (!parsed?.password || !parsed?.expiry) return null;
-    if (Date.now() >= parsed.expiry) {
-      localStorage.removeItem('nav_password_token');
-      return null;
-    }
+    if (!parsed?.password) return null;
     return parsed;
   } catch (error) {
     localStorage.removeItem('nav_password_token');
@@ -3444,6 +3425,22 @@ function closePasswordModal() {
   authShake.value = false;
   showAuthPasswordText.value = false;
   pendingAction.value = null;
+  // 通知 401 拦截器：用户取消了验证
+  if (pendingActionReject.value) {
+    const reject = pendingActionReject.value;
+    pendingActionResolve.value = null;
+    pendingActionReject.value = null;
+    reject(new Error('用户取消验证'));
+  }
+}
+
+// 取消信任此设备
+function revokeTrust() {
+  if (!confirm('取消信任此设备后，后续操作需要重新输入管理密码验证。确定取消？')) return;
+  localStorage.removeItem('nav_password_token');
+  localStorage.removeItem('nav_trust_device');
+  localStorage.removeItem('token');
+  showToastMessage('已取消信任此设备', 'success');
 }
 
 // 版本检测
@@ -3541,37 +3538,37 @@ async function verifyAuthPassword() {
     authError.value = '请输入密码';
     return;
   }
-  
+
   authLoading.value = true;
   authError.value = '';
-  
+
   try {
     const res = await verifyPassword(authPassword.value);
     localStorage.setItem('token', res.data.token);
-    
-    // 根据选择的记住时长保存
-    if (rememberAuthPassword.value && rememberDuration.value !== 'session') {
-      const duration = REMEMBER_DURATIONS[rememberDuration.value] || REMEMBER_DURATIONS['7days'];
-      const expiry = Date.now() + duration;
+
+    // 信任此设备：保存密码，不设过期时间
+    if (trustDevice.value) {
       localStorage.setItem('nav_password_token', JSON.stringify({
-        password: authPassword.value,
-        token: res.data.token,
-        expiry,
-        duration: rememberDuration.value
+        password: authPassword.value
       }));
-      localStorage.setItem('nav_remember_duration', rememberDuration.value);
+      localStorage.setItem('nav_trust_device', 'true');
     } else {
       localStorage.removeItem('nav_password_token');
-      // 如果选择仅本次会话，使用 sessionStorage
-      if (rememberDuration.value === 'session') {
-        sessionStorage.setItem('nav_session_auth', 'true');
-      }
+      localStorage.removeItem('nav_trust_device');
     }
-    
+
     showPasswordModal.value = false;
     authLoading.value = false;
     showAuthPasswordText.value = false;
-    
+
+    // 通知 401 拦截器：验证已完成
+    if (pendingActionResolve.value) {
+      const resolve = pendingActionResolve.value;
+      pendingActionResolve.value = null;
+      pendingActionReject.value = null;
+      resolve();
+    }
+
     if (pendingAction.value) {
       const action = pendingAction.value;
       pendingAction.value = null;
@@ -3630,11 +3627,7 @@ async function batchDeleteSelected() {
           await deleteCard(card.id);
           successCount++;
         } catch (e) {
-          if (e.response?.status === 401) {
-            closeProgressModal();
-            handleTokenInvalid();
-            return;
-          }
+          failedCards.push(card.title);
         }
       }
       
@@ -3860,11 +3853,7 @@ async function saveMenuModal() {
   } catch (error) {
     // 失败时回滚
     menus.value = originalMenus;
-    if (error.response?.status === 401) {
-      handleTokenInvalid();
-    } else {
-      alert('操作失败：' + (error.response?.data?.error || error.message));
-    }
+    alert('操作失败：' + (error.response?.data?.error || error.message));
   } finally {
     menuModalLoading.value = false;
   }
@@ -3926,12 +3915,8 @@ async function handleDeleteMenu(menu) {
     if (wasActive) {
       activeMenu.value = menu;
     }
-    
-    if (error.response?.status === 401) {
-      handleTokenInvalid();
-    } else {
-      alert('删除失败：' + (error.response?.data?.error || error.message));
-    }
+
+    alert('删除失败：' + (error.response?.data?.error || error.message));
   }
 }
 
@@ -3979,11 +3964,7 @@ async function handleDeleteSubMenu(subMenu, parentMenu) {
       activeSubMenu.value = subMenu;
     }
     
-    if (error.response?.status === 401) {
-      handleTokenInvalid();
-    } else {
-      alert('删除失败：' + (error.response?.data?.error || error.message));
-    }
+    alert('删除失败：' + (error.response?.data?.error || error.message));
   }
 }
 
@@ -4006,14 +3987,10 @@ async function handleMenusReordered(menuIds) {
       }
     }
   } catch (error) {
-    if (error.response?.status === 401) {
-      handleTokenInvalid();
-    } else {
-      alert('排序失败：' + (error.response?.data?.error || error.message));
-      // 刷新恢复原顺序
-      const menusRes = await getMenus(true);
-      menus.value = menusRes.data;
-    }
+    alert('排序失败：' + (error.response?.data?.error || error.message));
+    // 刷新恢复原顺序
+    const menusRes = await getMenus(true);
+    menus.value = menusRes.data;
   }
 }
 
@@ -4043,11 +4020,7 @@ async function handleMoveSubMenuUp(subMenu, parentMenu, index) {
       }
     }
   } catch (error) {
-    if (error.response?.status === 401) {
-      handleTokenInvalid();
-    } else {
-      alert('排序失败：' + (error.response?.data?.error || error.message));
-    }
+    alert('排序失败：' + (error.response?.data?.error || error.message));
   }
 }
 
@@ -4077,11 +4050,7 @@ async function handleMoveSubMenuDown(subMenu, parentMenu, index) {
       }
     }
   } catch (error) {
-    if (error.response?.status === 401) {
-      handleTokenInvalid();
-    } else {
-      alert('排序失败：' + (error.response?.data?.error || error.message));
-    }
+    alert('排序失败：' + (error.response?.data?.error || error.message));
   }
 }
 
@@ -4280,13 +4249,6 @@ async function moveCardToCategory(menuId, subMenuId) {
         }
       } catch (err) {
         failedCards.push(card.title);
-        
-        // 如果是401错误，立即处理
-        if (err.response?.status === 401) {
-          closeProgressModal();
-          handleTokenInvalid();
-          return;
-        }
       }
     }
     
@@ -4318,12 +4280,7 @@ async function moveCardToCategory(menuId, subMenuId) {
     clearSelection();
   } catch (error) {
     console.error('移动卡片失败:', error);
-    if (error.response?.status === 401) {
-      closeProgressModal();
-      handleTokenInvalid();
-    } else {
-      updateProgress(`移动失败：${error.response?.data?.error || error.message}`, 'error');
-    }
+    updateProgress(`移动失败：${error.response?.data?.error || error.message}`, 'error');
   } finally {
     isMovingCards.value = false;
   }
@@ -4357,12 +4314,7 @@ async function handleDeleteCard(card) {
     updateProgress('删除成功！', 'success');
   } catch (error) {
     console.error('删除卡片失败:', error);
-    if (error.response?.status === 401) {
-      closeProgressModal();
-      handleTokenInvalid();
-    } else {
-      updateProgress('删除失败：' + (error.response?.data?.error || error.message), 'error');
-    }
+    updateProgress('删除失败：' + (error.response?.data?.error || error.message), 'error');
   } finally {
     isDeletingCard.value = false;
   }
@@ -4551,14 +4503,7 @@ async function generateAIName() {
         showToastMessage(res.data.message || 'AI 生成失败', 'error');
       }
   } catch (err) {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('token');
-      pendingAction.value = generateAIName;
-      showPasswordModal.value = true;
-      authError.value = '登录已过期，请重新输入密码';
-    } else {
-      showToastMessage(getFriendlyAIErrorMessage(err), 'error');
-    }
+    showToastMessage(getFriendlyAIErrorMessage(err), 'error');
   } finally {
     aiGeneratingName.value = false;
   }
@@ -4592,14 +4537,7 @@ async function generateAIDescription() {
         showToastMessage(res.data.message || 'AI 生成失败', 'error');
       }
   } catch (err) {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('token');
-      pendingAction.value = generateAIDescription;
-      showPasswordModal.value = true;
-      authError.value = '登录已过期，请重新输入密码';
-    } else {
-      showToastMessage(getFriendlyAIErrorMessage(err), 'error');
-    }
+    showToastMessage(getFriendlyAIErrorMessage(err), 'error');
   } finally {
     aiGenerating.value = false;
   }
@@ -4665,14 +4603,7 @@ async function generateAITags() {
       showToastMessage(res.data.message || 'AI 推荐失败', 'error');
     }
   } catch (err) {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('token');
-      pendingAction.value = generateAITags;
-      showPasswordModal.value = true;
-      authError.value = '登录已过期，请重新输入密码';
-    } else {
-      showToastMessage(getFriendlyAIErrorMessage(err), 'error');
-    }
+    showToastMessage(getFriendlyAIErrorMessage(err), 'error');
   } finally {
     aiGeneratingTags.value = false;
   }
@@ -4745,27 +4676,22 @@ async function saveCardEdit() {
         closeEditCardModal();
       } catch (error) {
     console.error('保存卡片失败:', error);
-    if (error.response?.status === 401) {
-      closeEditCardModal();
-      handleTokenInvalid();
-    } else {
-      const status = error.response?.status;
-      const serverMessage = error.response?.data?.error || error.response?.data?.message;
-      let reason = serverMessage || error.message || '未知错误';
+    const status = error.response?.status;
+    const serverMessage = error.response?.data?.error || error.response?.data?.message;
+    let reason = serverMessage || error.message || '未知错误';
 
-      if (!error.response) {
-        reason = '无法连接到服务器，请检查网络连接或稍后重试';
-      } else if (status === 400) {
-        reason = serverMessage || '提交的数据无效，请检查卡片信息';
-      } else if (status === 404) {
-        reason = '该卡片可能已被删除或当前链接已失效，请刷新页面后重试';
-      } else if (status >= 500) {
-        reason = serverMessage || '服务器暂时无法处理这张卡片，请稍后重试';
-      }
-
-      editError.value = '';
-      alert(`保存失败：${reason}`);
+    if (!error.response) {
+      reason = '无法连接到服务器，请检查网络连接或稍后重试';
+    } else if (status === 400) {
+      reason = serverMessage || '提交的数据无效，请检查卡片信息';
+    } else if (status === 404) {
+      reason = '该卡片可能已被删除或当前链接已失效，请刷新页面后重试';
+    } else if (status >= 500) {
+      reason = serverMessage || '服务器暂时无法处理这张卡片，请稍后重试';
     }
+
+    editError.value = '';
+    alert(`保存失败：${reason}`);
   } finally {
     editLoading.value = false;
   }
@@ -8778,6 +8704,15 @@ async function saveCardEdit() {
 .checkbox-label {
   font-size: 14px;
   color: #555;
+}
+
+.trust-status {
+  font-size: 12px;
+  color: #52c41a;
+  background: rgba(82, 196, 26, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
 }
 
 .remember-duration-select {

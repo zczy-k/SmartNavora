@@ -24,7 +24,7 @@ function authHeaders() {
 }
 
 // 创建 axios 实例
-const instance = axios.create({
+export const instance = axios.create({
   baseURL: BASE
 });
 
@@ -34,6 +34,73 @@ instance.interceptors.request.use(config => {
   config.headers = { ...config.headers, ...headers };
   return config;
 });
+
+// ========== 全局 401 响应拦截器 ==========
+let authChallengeHandler = null;
+let authChallengePromise = null;
+
+// 注册认证挑战回调（由 Home.vue 调用）
+export const setAuthChallengeHandler = (handler) => {
+  authChallengeHandler = handler;
+};
+
+// 尝试用保存的密码静默续签 token
+async function tryRestoreTokenSilently() {
+  const savedData = localStorage.getItem('nav_password_token');
+  if (!savedData) return false;
+  try {
+    const parsed = JSON.parse(savedData);
+    if (!parsed?.password) return false;
+    const res = await instance.post('/verify-password', { password: parsed.password });
+    localStorage.setItem('token', res.data.token);
+    return true;
+  } catch {
+    localStorage.removeItem('nav_password_token');
+    return false;
+  }
+}
+
+// 响应拦截器：捕获 401，自动重试
+instance.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // 非 401 或已重试过的请求，直接抛出
+    if (error.response?.status !== 401 || originalRequest._retried) {
+      return Promise.reject(error);
+    }
+
+    originalRequest._retried = true;
+
+    // 第一步：尝试用保存的密码静默续签
+    if (await tryRestoreTokenSilently()) {
+      originalRequest.headers['Authorization'] = `Bearer ${localStorage.getItem('token')}`;
+      return instance(originalRequest);
+    }
+
+    // 第二步：静默续签失败，弹出密码验证窗口
+    // 如果已有弹窗在显示（并发请求场景），复用同一个 Promise
+    if (!authChallengePromise && authChallengeHandler) {
+      authChallengePromise = authChallengeHandler();
+    }
+
+    if (authChallengePromise) {
+      try {
+        await authChallengePromise;
+        authChallengePromise = null;
+        // 用户验证成功，用新 token 重试原请求
+        originalRequest.headers['Authorization'] = `Bearer ${localStorage.getItem('token')}`;
+        return instance(originalRequest);
+      } catch {
+        authChallengePromise = null;
+        return Promise.reject(error);
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 export const login = (username, password) => instance.post(`/login`, { username, password });
 export const verifyPassword = (password) => instance.post(`/verify-password`, { password });
