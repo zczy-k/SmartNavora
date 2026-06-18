@@ -9,6 +9,7 @@ const authMiddleware = require('./authMiddleware');
 const db = require('../db');
 const { AI_PROVIDERS, callAI, probeBaseUrl } = require('../utils/aiProvider');
 const { encrypt, decrypt } = require('../utils/crypto');
+const { fetchMetadata, extractKeyInfo } = require('../utils/metadataFetcher');
 const EventEmitter = require('events');
 
 // ==================== 统一字段生成服务 ====================
@@ -42,10 +43,18 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
 
   if (neededTypes.length === 0) return { updated: false, data: resultData };
 
+  // 抓取网页元数据（失败静默降级为 null，不影响主流程）
+  let metadata = null;
+  try {
+    metadata = await fetchMetadata(card.url);
+  } catch (e) {
+    // 静默失败
+  }
+
   // 2. 尝试使用统一 Prompt 处理多字段（效率更高）
   if (neededTypes.length > 1) {
     try {
-      const prompt = buildPromptWithStrategy(buildUnifiedPrompt(card, neededTypes, existingTags), strategy);
+      const prompt = buildPromptWithStrategy(buildUnifiedPrompt(card, neededTypes, existingTags, metadata), strategy);
       const aiResponse = await callAI(config, prompt);
       const parsed = parseUnifiedResponse(aiResponse, neededTypes, existingTags);
 
@@ -78,7 +87,7 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
     try {
       let prompt, aiResponse, cleaned;
       if (type === 'name') {
-        prompt = buildPromptWithStrategy(buildNamePrompt(card), strategy);
+        prompt = buildPromptWithStrategy(buildNamePrompt(card, metadata), strategy);
         aiResponse = await callAI(config, prompt);
         cleaned = cleanName(aiResponse);
         if (!cleaned) {
@@ -94,7 +103,7 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
             resultData.name = cleaned;
           }
         } else if (type === 'description') {
-        prompt = buildPromptWithStrategy(buildDescriptionPrompt(card), strategy);
+        prompt = buildPromptWithStrategy(buildDescriptionPrompt(card, metadata), strategy);
         aiResponse = await callAI(config, prompt);
         cleaned = cleanDescription(aiResponse);
         if (!cleaned) {
@@ -110,7 +119,7 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
             resultData.description = cleaned;
           }
         } else if (type === 'tags') {
-        prompt = buildPromptWithStrategy(buildTagsPrompt(card, existingTags), strategy);
+        prompt = buildPromptWithStrategy(buildTagsPrompt(card, existingTags, metadata), strategy);
         aiResponse = await callAI(config, prompt);
         const { tags, newTags } = parseTagsResponse(aiResponse, existingTags);
         const allTags = [...tags, ...newTags];
@@ -1004,96 +1013,101 @@ function getPageTypeDescription(analysis) {
 
 // ==================== Prompt 构建函数 ====================
 
-function buildUnifiedPrompt(card, types, existingTags) {
+function buildUnifiedPrompt(card, types, existingTags, metadata = null) {
   const domain = extractDomain(card.url);
   const analysis = analyzePageType(card.url, card.title);
   const pageTypeDesc = getPageTypeDescription(analysis);
-  
-  const tagsStr = existingTags.length > 0 
+  const keyInfo = extractKeyInfo(metadata);
+
+  const tagsStr = existingTags.length > 0
     ? existingTags.slice(0, 30).join('、')
     : '暂无';
-  
-  const currentName = card.title && !card.title.includes('://') && !card.title.startsWith('www.') 
+
+  const currentName = card.title && !card.title.includes('://') && !card.title.startsWith('www.')
     ? card.title : '';
 
-  // 构建上下文信息
-  let contextInfo = `网站:${card.url}`;
-  if (currentName) contextInfo += ` 当前参考名:${currentName}`;
-  if (card.desc) contextInfo += ` 当前参考描述:${card.desc}`;
-  contextInfo += ` 页面类型:${pageTypeDesc}`;
-  if (analysis.brand) contextInfo += ` 品牌:${analysis.brand}`;
-  if (analysis.hints.length > 0) contextInfo += ` 分析提示:${analysis.hints.join('; ')}`;
-  contextInfo += ` 现有标签:${tagsStr}`;
+  // 构建结构化上下文信息
+  let contextInfo = `【网站URL】${card.url}`;
+  if (currentName) contextInfo += `\n【原始标题】${currentName}`;
+  if (keyInfo?.bestTitle && keyInfo.bestTitle !== currentName) contextInfo += `\n【网站标识名】${keyInfo.bestTitle}`;
+  if (keyInfo?.bestDescription) contextInfo += `\n【网站自述】${keyInfo.bestDescription}`;
+  if (card.desc && (!keyInfo?.bestDescription || card.desc !== keyInfo.bestDescription)) contextInfo += `\n【当前描述】${card.desc}`;
+  contextInfo += `\n【页面类型】${pageTypeDesc}`;
+  if (analysis.brand) contextInfo += `\n【品牌识别】${analysis.brand}`;
+  if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand) contextInfo += ` (${keyInfo.siteName})`;
+  if (analysis.hints.length > 0) contextInfo += `\n【分析提示】${analysis.hints.join('; ')}`;
+  contextInfo += `\n【现有标签库】${tagsStr}`;
 
   const messages = [
     {
       role: 'system',
       content: `你是一个专业的互联网产品分析师和导航站编辑。
-任务：根据提供的网站信息（URL、参考标题、页面类型分析），生成高质量、精炼的导航卡片元数据。
+任务：根据提供的网站信息（URL、标题、网站自述、页面类型分析），生成高质量、精炼的导航卡片元数据。
 
 ## 核心准则
 
 ### 1. 名称 (name) 生成规则
-- **品牌首页**：只输出品牌核心名称（如 "GitHub"、"Notion"、"飞书"）
-- **文档/教程页**：采用 "[品牌] [主题]" 模式（如 "Vue 文档"、"React 入门指南"）
-- **博客/文章页**：采用 "[品牌/作者] [文章主题]" 或直接用文章标题精简版
-- **工具页**：采用 "[品牌] [工具名]" 模式（如 "JSON 格式化工具"）
-- **登录/功能页**：使用核心产品名称，忽略 "登录"、"注册" 等功能词
-- **清洗规则**：严格剔除 "官网"、"首页"、"官方网站"、"Login"、"Welcome"、"Sign in"、"-"、"|" 分隔符后的冗余内容
-- **长度限制**：建议中文 2-15 字，中英混合 2-40 字符
+按以下优先级依次判断，命中即停：
+1. 登录/认证/注册页 → 直接输出品牌名，忽略所有功能词
+2. 有明确品牌标识（网站标识名或品牌识别） → 使用该品牌名
+3. 文档/教程页 → "[品牌] [主题关键词]"
+4. 在线工具/应用 → "[品牌] [工具类型]"
+5. 具体文章/帖子 → 精简文章标题（去掉作者和站点名）
+6. 以上都不匹配 → 从域名提炼核心名称
+- 清洗规则：严格剔除 "官网"、"首页"、"官方网站"、"Login"、"Welcome"、"Sign in"、分隔符后的冗余内容
+- 长度限制：中文 2-15 字，中英混合 2-40 字符
 
 ### 2. 描述 (description) 生成规则
-- **品牌首页**：一句话说明 "它是什么" + "核心价值"（如 "全球领先的代码托管平台"）
-- **文档/教程页**：说明 "这份文档/教程讲什么"（如 "Vue3 组合式 API 的详细使用指南"）
-- **博客/文章页**：概括文章核心观点或主题
-- **工具页**：说明 "这个工具能做什么"
-- **登录/功能页**：描述该产品的核心功能，而非描述登录行为
-- **精炼原则**：杜绝 "这是一个"、"本网站"、"致力于" 等冗余前缀
-- **长度限制**：严格 15-35 个中文字符
+- 回答"这个网站对用户有什么用？"，而非描述网站本身
+- 优先使用【网站自述】中的真实信息来提炼，不要凭空编造
+- 长度指引：品牌首页 12-25 字；工具/文档页 18-35 字；博客/文章 15-30 字
+- 禁止使用的空泛表述："全球领先的..."（除非确实 TOP3）、"一站式...平台"、"致力于..."、"专注于..."、"专业的...服务"、"这是一个"、"本网站"
+- 应使用具体描述：说明核心功能、用户价值、差异化定位
 
 ### 3. 标签 (tags) 生成规则
-- 推荐 2-4 个最相关的分类标签
-- 优先从 "现有标签列表" 中精确匹配
-- 若现有标签不匹配，创造 1-2 个精准新标签（每个 2-4 字）
+- 推荐 2-4 个标签，覆盖不同维度：1 个领域标签 + 1 个功能标签 + 0-1 个补充标签
+- 优先从"现有标签库"中精确匹配
+- 新标签必须是名词短语，2-4 字，具有通用性（至少 5 个网站可用）
 
 ## 重要提示
-- 你无法访问实际网页，请根据 URL 结构、域名、参考标题、页面类型分析来推断
-- 如果信息不足，基于 URL 和域名做合理推断，不要输出 "无法确定" 类内容
-- 必须输出纯 JSON 对象，严禁包含思考过程、解释说明或 Markdown 标记`
+- 如果有【网站自述】，优先基于它来提炼描述，比凭空推断更准确
+- 如果信息不足，基于 URL 和域名做合理推断，不要输出"无法确定"类内容
+- 必须输出纯 JSON 对象，严禁包含思考过程、解释说明或 Markdown 标记
+- 输出格式：{"name":"名称","description":"描述","tags":["标签1","标签2"]}`
     },
-    // Few-shot 示例：覆盖多种网站类型
-    // 1. 代码托管平台首页
-    { role: 'user', content: '网站:https://github.com/ 当前参考名:GitHub: Let\'s build from here · GitHub 页面类型:网站首页 品牌:GitHub 现有标签:开发工具,代码托管,开源,AI' },
-    { role: 'assistant', content: '{"name":"GitHub","description":"全球领先的代码托管与开源协作开发平台","tags":["开发工具","代码托管"]}' },
-    
-    // 2. 技术文档页
-    { role: 'user', content: '网站:https://vuejs.org/guide/introduction.html 当前参考名:Introduction | Vue.js 页面类型:文档/教程 品牌:Vue 现有标签:前端框架,JavaScript,文档' },
+    // Few-shot 示例：使用结构化格式，覆盖多种场景
+    // 1. 代码托管平台首页（有元数据）
+    { role: 'user', content: '【网站URL】https://github.com/\n【原始标题】GitHub: Let\'s build from here · GitHub\n【网站标识名】GitHub\n【网站自述】GitHub is where over 100 million developers shape the future of software, together.\n【页面类型】网站首页\n【品牌识别】GitHub\n【现有标签库】开发工具、代码托管、开源、AI' },
+    { role: 'assistant', content: '{"name":"GitHub","description":"全球最大的代码托管与开源协作开发平台","tags":["开发工具","代码托管"]}' },
+
+    // 2. 技术文档页（有元数据）
+    { role: 'user', content: '【网站URL】https://vuejs.org/guide/introduction.html\n【原始标题】Introduction | Vue.js\n【网站自述】Vue.js - The Progressive JavaScript Framework\n【页面类型】文档/教程\n【品牌识别】Vue\n【现有标签库】前端框架、JavaScript、文档' },
     { role: 'assistant', content: '{"name":"Vue 入门指南","description":"Vue.js 框架核心概念与基础使用方法详解","tags":["前端框架","JavaScript","文档"]}' },
-    
-    // 3. 登录/认证页面
-    { role: 'user', content: '网站:https://auth.example.com/login?redirect=/dashboard 当前参考名:Sign In - Example Platform 页面类型:登录/认证 品牌:Example 分析提示:URL 参数表明这是登录/认证流程页面 现有标签:SaaS,效率工具' },
+
+    // 3. 登录/认证页面（有元数据，需忽略登录行为）
+    { role: 'user', content: '【网站URL】https://auth.example.com/login?redirect=/dashboard\n【原始标题】Sign In - Example Platform\n【网站标识名】Example Platform\n【页面类型】登录/认证\n【品牌识别】Example\n【分析提示】URL 参数表明这是登录/认证流程页面\n【现有标签库】SaaS、效率工具' },
     { role: 'assistant', content: '{"name":"Example Platform","description":"企业级协作与项目管理平台","tags":["SaaS","效率工具"]}' },
-    
-    // 4. 在线工具
-    { role: 'user', content: '网站:https://tinypng.com/ 当前参考名:TinyPNG – Compress WebP, PNG and JPEG images intelligently 页面类型:在线工具 品牌:TinyPNG 现有标签:图片工具,压缩,设计' },
-    { role: 'assistant', content: '{"name":"TinyPNG","description":"智能图片压缩工具，支持 PNG、JPEG、WebP 格式","tags":["图片工具","压缩"]}' },
-    
+
+    // 4. 在线工具（有元数据）
+    { role: 'user', content: '【网站URL】https://tinypng.com/\n【原始标题】TinyPNG – Compress WebP, PNG and JPEG images intelligently\n【网站自述】Optimize your images with a perfect balance of quality and file size.\n【页面类型】在线工具\n【品牌识别】TinyPNG\n【现有标签库】图片工具、压缩、设计' },
+    { role: 'assistant', content: '{"name":"TinyPNG","description":"智能压缩 PNG/JPEG/WebP 图片，最高减少 80% 体积","tags":["图片工具","压缩"]}' },
+
     // 5. 问答社区
-    { role: 'user', content: '网站:https://www.zhihu.com/question/12345678 当前参考名:如何学习编程？ - 知乎 页面类型:问答社区 品牌:知乎 现有标签:问答,知识,社区' },
+    { role: 'user', content: '【网站URL】https://www.zhihu.com/question/12345678\n【原始标题】如何学习编程？ - 知乎\n【页面类型】问答社区\n【品牌识别】知乎\n【现有标签库】问答、知识、社区' },
     { role: 'assistant', content: '{"name":"知乎","description":"中文互联网高质量问答社区与知识分享平台","tags":["问答","知识","社区"]}' },
-    
-    // 6. 电商网站
-    { role: 'user', content: '网站:https://www.amazon.com/dp/B09V3KXJPB 当前参考名:Apple AirPods Pro (2nd Generation) - Amazon.com 页面类型:电商/购物 品牌:Amazon 现有标签:购物,电商,数码' },
-    { role: 'assistant', content: '{"name":"Amazon","description":"全球综合性电子商务与云计算服务平台","tags":["购物","电商"]}' },
-    
-    // 7. AI 产品
-    { role: 'user', content: '网站:https://chat.openai.com/ 当前参考名:ChatGPT 页面类型:AI/人工智能 品牌:ChatGPT 现有标签:AI,聊天机器人,效率工具' },
-    { role: 'assistant', content: '{"name":"ChatGPT","description":"OpenAI 开发的智能对话 AI 助手","tags":["AI","聊天机器人"]}' },
-    
-    // 8. 个人博客/技术文章
-    { role: 'user', content: '网站:https://overreacted.io/a-complete-guide-to-useeffect/ 当前参考名:A Complete Guide to useEffect — overreacted 页面类型:博客/文章 品牌:overreacted 现有标签:React,前端,博客' },
+
+    // 6. AI 产品
+    { role: 'user', content: '【网站URL】https://chat.openai.com/\n【原始标题】ChatGPT\n【网站标识名】ChatGPT\n【网站自述】ChatGPT helps you get answers, find inspiration and be more productive.\n【页面类型】AI/人工智能\n【品牌识别】ChatGPT\n【现有标签库】AI、聊天机器人、效率工具' },
+    { role: 'assistant', content: '{"name":"ChatGPT","description":"OpenAI 开发的智能对话助手，支持问答、写作与编程","tags":["AI","聊天机器人"]}' },
+
+    // 7. 个人博客（信息匮乏场景）
+    { role: 'user', content: '【网站URL】https://overreacted.io/a-complete-guide-to-useeffect/\n【原始标题】A Complete Guide to useEffect — overreacted\n【页面类型】博客/文章\n【品牌识别】overreacted\n【现有标签库】React、前端、博客' },
     { role: 'assistant', content: '{"name":"useEffect 完全指南","description":"Dan Abramov 深入讲解 React useEffect 的工作原理","tags":["React","前端","博客"]}' },
-    
+
+    // 8. 信息极度匮乏场景
+    { role: 'user', content: '【网站URL】https://example-tool.com/\n【原始标题】无\n【页面类型】网站首页\n【品牌识别】Example Tool\n【现有标签库】暂无' },
+    { role: 'assistant', content: '{"name":"Example Tool","description":"Example Tool 官方网站与产品平台","tags":["工具","网站"]}' },
+
     // 实际请求
     { role: 'user', content: contextInfo }
   ];
@@ -1101,175 +1115,204 @@ function buildUnifiedPrompt(card, types, existingTags) {
   return messages;
 }
 
-function buildNamePrompt(card) {
+function buildNamePrompt(card, metadata = null) {
   const domain = extractDomain(card.url);
   const analysis = analyzePageType(card.url, card.title);
   const pageTypeDesc = getPageTypeDescription(analysis);
-  
-  const commonRules = '\n\n## 强制要求\n- 严禁输出任何思考过程、解释或反问\n- 严禁输出"请提供"、"如果您能"、"我需要"等请求信息的内容\n- 必须直接输出名称文本，不要任何前缀或后缀\n- 即使信息有限，也必须基于 URL 和标题做出合理推断并输出结果';
-  
+  const keyInfo = extractKeyInfo(metadata);
+
+  const commonRules = '\n\n## 强制要求\n- 严禁输出任何思考过程、解释或反问\n- 严禁输出"请提供"、"如果您能"、"我需要"等请求信息的内容\n- 必须直接输出名称文本，不要任何前缀或后缀\n- 即使信息有限，也必须基于已有信息做出合理推断并输出结果';
+
+  // 构建结构化上下文
+  let contextStr = `网站地址：${card.url}\n当前抓取名：${card.title || '无'}`;
+  if (keyInfo?.bestTitle && keyInfo.bestTitle !== card.title) contextStr += `\n网站标识名：${keyInfo.bestTitle}`;
+  if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand) contextStr += `\n站点名称：${keyInfo.siteName}`;
+  contextStr += `\n页面类型：${pageTypeDesc}`;
+  if (analysis.brand) contextStr += `\n品牌：${analysis.brand}`;
+  if (analysis.hints.length > 0) contextStr += `\n分析提示：${analysis.hints.join('; ')}`;
+  contextStr += '\n输出名称：';
+
   return [
     {
       role: 'system',
-      content: `你是一个精炼的网站命名专家。你的任务是根据网站 URL 和标题提取或生成简洁的名称。
+      content: `你是一个精炼的网站命名专家。你的任务是根据网站信息提取或生成最简洁准确的名称。
 
-## 命名规则（按页面类型）
+## 命名决策树（按优先级依次判断，命中即停）
 
-### 品牌/产品首页
-- 只输出品牌核心名称（如 "GitHub"、"Notion"、"飞书"、"淘宝"）
-
-### 文档/教程/指南页
-- 采用 "[品牌] [主题]" 模式（如 "Vue 文档"、"React 入门指南"、"Stripe API 文档"）
-
-### 博客/文章页
-- 输出文章标题精简版或 "[作者/平台] [主题]"（如 "useEffect 完全指南"、"张三的技术博客"）
-
-### 工具/在线应用页
-- 采用 "[品牌/功能] [工具类型]" 模式（如 "TinyPNG 图片压缩"、"JSON 格式化工具"）
-
-### 登录/认证/功能页
-- 使用核心产品名称，完全忽略功能词（如 "Sign in to GitHub" → "GitHub"）
-
-### 电商/商品页
-- 输出平台品牌名（如 "淘宝"、"京东"、"Amazon"），不要输出商品名
-
-### 视频/社交内容页
-- 输出平台品牌名（如 "YouTube"、"哔哩哔哩"、"知乎"）
+1. **登录/认证/注册页** → 直接输出品牌名，忽略所有功能词
+2. **有明确品牌标识**（网站标识名或站点名称） → 使用该品牌名
+3. **文档/教程/指南页** → "[品牌] [主题关键词]"
+4. **在线工具/应用** → "[品牌] [工具类型]"
+5. **具体文章/帖子** → 精简文章标题（去掉作者名和站点名）
+6. **电商/商品页** → 输出平台品牌名，不输出商品名
+7. **以上都不匹配** → 从域名提炼核心名称
 
 ## 清洗规则
 - 严格剔除：官网、首页、官方网站、Home、Official、Login、Welcome、Sign in、注册、|、-、· 后的冗余内容
 - 去除 SEO 堆砌词汇和重复的品牌名
 
+## 错误示例（禁止输出类似内容）
+- ❌ "GitHub官网" → 含"官网"冗余词
+- ❌ "Sign in - GitHub" → 未清洗登录页标题
+- ❌ "Welcome to Notion" → 未提取核心品牌名
+- ❌ "TinyPNG – Compress WebP, PNG and JPEG" → 照搬原标题未精简
+
 ## 长度限制
 - 中文：2-15 字
 - 中英混合：2-40 字符${commonRules}`
     },
-    // Few-shot 示例
-    { role: 'user', content: '网站地址：https://github.com/\n当前抓取名：GitHub: Let\'s build from here · GitHub\n页面类型：代码托管\n品牌：GitHub\n输出名称：' },
+    // Few-shot 示例（覆盖更多场景）
+    { role: 'user', content: '网站地址：https://github.com/\n当前抓取名：GitHub: Let\'s build from here · GitHub\n网站标识名：GitHub\n页面类型：代码托管\n品牌：GitHub\n输出名称：' },
     { role: 'assistant', content: 'GitHub' },
     { role: 'user', content: '网站地址：https://auth.business.gemini.google/login\n当前抓取名：Sign in - Gemini\n页面类型：登录/认证\n品牌：Gemini\n分析提示：URL 参数表明这是登录/认证流程页面\n输出名称：' },
     { role: 'assistant', content: 'Gemini' },
     { role: 'user', content: '网站地址：https://react.dev/learn/tutorial-tic-tac-toe\n当前抓取名：Tutorial: Tic-Tac-Toe – React\n页面类型：文档/教程\n品牌：React\n输出名称：' },
     { role: 'assistant', content: 'React 井字棋教程' },
-    { role: 'user', content: '网站地址：https://www.taobao.com/\n当前抓取名：淘宝网 - 淘！我喜欢\n页面类型：电子商务\n品牌：淘宝\n输出名称：' },
+    { role: 'user', content: '网站地址：https://www.taobao.com/\n当前抓取名：淘宝网 - 淘！我喜欢\n站点名称：淘宝\n页面类型：电子商务\n品牌：淘宝\n输出名称：' },
     { role: 'assistant', content: '淘宝' },
     { role: 'user', content: '网站地址：https://example.com/\n当前抓取名：无\n页面类型：网站首页\n品牌：Example\n输出名称：' },
     { role: 'assistant', content: 'Example' },
+    { role: 'user', content: '网站地址：https://docs.github.com/en/actions\n当前抓取名：GitHub Actions documentation - GitHub Docs\n网站标识名：GitHub Docs\n页面类型：文档/教程\n品牌：GitHub\n输出名称：' },
+    { role: 'assistant', content: 'GitHub Actions 文档' },
     // 实际请求
     {
       role: 'user',
-      content: `网站地址：${card.url}
-当前抓取名：${card.title || '无'}
-页面类型：${pageTypeDesc}${analysis.brand ? `\n品牌：${analysis.brand}` : ''}${analysis.hints.length > 0 ? `\n分析提示：${analysis.hints.join('; ')}` : ''}
-输出名称：`
+      content: contextStr
     }
   ];
 }
 
-function buildDescriptionPrompt(card) {
+function buildDescriptionPrompt(card, metadata = null) {
   const domain = extractDomain(card.url);
   const analysis = analyzePageType(card.url, card.title);
   const pageTypeDesc = getPageTypeDescription(analysis);
-  
-  const commonRules = '\n\n## 强制要求\n- 严禁输出任何思考过程、解释或反问\n- 严禁输出"请提供"、"如果您能"、"我需要"等请求信息的内容\n- 必须直接输出描述文本，不要任何前缀或后缀\n- 即使信息有限，也必须基于 URL 和标题做出合理推断并输出结果';
-  
+  const keyInfo = extractKeyInfo(metadata);
+
+  const commonRules = '\n\n## 强制要求\n- 严禁输出任何思考过程、解释或反问\n- 严禁输出"请提供"、"如果您能"、"我需要"等请求信息的内容\n- 必须直接输出描述文本，不要任何前缀或后缀\n- 即使信息有限，也必须基于已有信息做出合理推断并输出结果';
+
+  // 构建结构化上下文
+  let contextStr = `网站名称：${card.title || domain}\n网站地址：${card.url}`;
+  if (keyInfo?.bestDescription) contextStr += `\n网站自述：${keyInfo.bestDescription}（仅供参考提炼，不要照搬）`;
+  if (card.desc && (!keyInfo?.bestDescription || card.desc !== keyInfo.bestDescription)) contextStr += `\n参考描述：${card.desc}`;
+  contextStr += `\n页面类型：${pageTypeDesc}`;
+  if (analysis.brand) contextStr += `\n品牌：${analysis.brand}`;
+  if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand) contextStr += ` (${keyInfo.siteName})`;
+  if (analysis.hints.length > 0) contextStr += `\n分析提示：${analysis.hints.join('; ')}`;
+  contextStr += '\n输出描述：';
+
   return [
     {
       role: 'system',
-      content: `你是一个资深的导航站文案编辑。你的任务是根据网站 URL 和标题生成精炼的描述。
+      content: `你是一个资深的导航站文案编辑。你的任务是根据网站信息生成精炼、有价值的描述。
+核心原则：回答"这个网站对用户有什么用？"，而非描述网站本身。
 
-## 描述生成规则（按页面类型）
+## 描述生成指引（按页面类型）
 
 ### 品牌/产品首页
-- 公式："[定位词] + [核心价值]"
-- 示例："全球领先的代码托管与协作开发平台"、"一站式智能协作办公平台"
-
-### 文档/教程/指南页
-- 公式："[主题] + [具体内容概述]"
-- 示例："Vue3 组合式 API 的详细使用指南"、"从零开始学习 React Hooks"
+- 一句话说明"它是什么"+"核心功能"
+- 长度目标：12-25 字
 
 ### 工具/在线应用页
-- 公式："[功能动词] + [解决的问题]"
-- 示例："智能压缩 PNG/JPEG 图片，最高减少 80% 文件体积"
+- 说明"能做什么"+"解决什么问题"
+- 长度目标：18-35 字
+
+### 文档/教程/指南页
+- 说明"讲什么内容"+"适合谁看"
+- 长度目标：18-35 字
 
 ### 博客/文章页
-- 公式："[作者/来源] + [文章核心观点]"
-- 示例："深入讲解 React useEffect 的工作原理与最佳实践"
+- 概括核心观点或主题
+- 长度目标：15-30 字
 
 ### 登录/认证/功能页
 - 描述产品核心功能，而非登录行为
-- 示例："企业级项目管理与团队协作平台"
-
-### 电商平台
-- 公式："[平台定位] + [核心服务]"
-- 示例："综合性电商平台，提供海量商品与便捷购物体验"
+- 长度目标：15-30 字
 
 ### 问答/社区
-- 公式："[社区类型] + [核心价值]"
-- 示例："高质量中文问答社区与知识分享平台"
+- 说明社区定位和核心价值
+- 长度目标：15-30 字
 
-### AI/工具产品
-- 公式："[开发者/公司] + [产品功能]"
-- 示例："OpenAI 开发的智能对话 AI 助手"
+## 反同质化规则（严格执行）
 
-## 精炼原则
-- 杜绝冗余前缀："这是一个"、"本网站"、"致力于"、"欢迎来到"
-- 杜绝模糊表述："提供服务"、"满足需求"、"各种功能"
+### 禁止使用的空泛表述
+- "全球领先的..."（除非确实是全球 TOP3）
+- "一站式...平台"（除非真的整合了多种核心功能）
+- "致力于..."、"专注于..."、"提供专业的..."
+- "这是一个"、"本网站"、"欢迎来到"
 
-## 长度限制
-- 严格 15-35 个中文字符（含标点）${commonRules}`
+### 应该使用的具体描述
+- ✅ "免费压缩 PNG/JPEG/WebP 图片，最高减少 80% 体积"
+- ✅ "国内最大的技术问答与知识分享社区"
+- ✅ "支持团队协作的在线文档与知识库工具"
+- ✅ "开源的 JavaScript 前端框架，用于构建用户界面"
+
+## 数据来源优先级
+如果有"网站自述"，优先基于它提炼（比凭空推断更准确），但不要照搬原文${commonRules}`
     },
     // Few-shot 示例
-    { role: 'user', content: '网站名称：GitHub\n网站地址：https://github.com/\n页面类型：代码托管\n品牌：GitHub\n输出描述：' },
-    { role: 'assistant', content: '全球领先的代码托管与开源协作开发平台' },
-    { role: 'user', content: '网站名称：Gemini\n网站地址：https://gemini.google/\n页面类型：AI/人工智能\n品牌：Gemini\n输出描述：' },
-    { role: 'assistant', content: 'Google 推出的多模态 AI 大模型助手' },
-    { role: 'user', content: '网站名称：TinyPNG\n网站地址：https://tinypng.com/\n页面类型：在线工具\n品牌：TinyPNG\n输出描述：' },
-    { role: 'assistant', content: '智能图片压缩工具，支持 PNG、JPEG、WebP 格式' },
+    { role: 'user', content: '网站名称：GitHub\n网站地址：https://github.com/\n网站自述：GitHub is where over 100 million developers shape the future of software, together.\n页面类型：代码托管\n品牌：GitHub\n输出描述：' },
+    { role: 'assistant', content: '全球最大的代码托管与开源协作开发平台' },
+    { role: 'user', content: '网站名称：Gemini\n网站地址：https://gemini.google/\n网站自述：Get help with writing, planning, learning and more from Google AI.\n页面类型：AI/人工智能\n品牌：Gemini\n输出描述：' },
+    { role: 'assistant', content: 'Google 推出的多模态 AI 助手，支持写作、学习与编程' },
+    { role: 'user', content: '网站名称：TinyPNG\n网站地址：https://tinypng.com/\n网站自述：Optimize your images with a perfect balance of quality and file size.\n页面类型：在线工具\n品牌：TinyPNG\n输出描述：' },
+    { role: 'assistant', content: '智能压缩 PNG/JPEG/WebP 图片，最高减少 80% 体积' },
     { role: 'user', content: '网站名称：知乎\n网站地址：https://www.zhihu.com/\n页面类型：问答社区\n品牌：知乎\n输出描述：' },
     { role: 'assistant', content: '中文互联网高质量问答社区与知识分享平台' },
-    { role: 'user', content: '网站名称：未知网站\n网站地址：https://example.com/\n页面类型：网站首页\n品牌：Example\n输出描述：' },
-    { role: 'assistant', content: '提供优质在线服务的综合性网站平台' },
+    { role: 'user', content: '网站名称：Example\n网站地址：https://example.com/\n页面类型：网站首页\n品牌：Example\n输出描述：' },
+    { role: 'assistant', content: 'Example 官方网站与产品平台' },
     // 实际请求
     {
       role: 'user',
-      content: `网站名称：${card.title || domain}
-网站地址：${card.url}
-${card.desc ? `参考描述：${card.desc}` : ''}
-页面类型：${pageTypeDesc}${analysis.brand ? `\n品牌：${analysis.brand}` : ''}${analysis.hints.length > 0 ? `\n分析提示：${analysis.hints.join('; ')}` : ''}
-输出描述：`
+      content: contextStr
     }
   ];
 }
 
-function buildTagsPrompt(card, existingTags) {
+function buildTagsPrompt(card, existingTags, metadata = null) {
   const domain = extractDomain(card.url);
   const analysis = analyzePageType(card.url, card.title);
   const pageTypeDesc = getPageTypeDescription(analysis);
-  
-  const tagsStr = existingTags.length > 0 
-    ? existingTags.slice(0, 50).join('、')
-    : '暂无';
-  
-  const commonRules = '\n\n## 强制要求\n- 严禁输出任何思考过程、解释或反问\n- 严禁输出"请提供"、"如果您能"、"我需要"等请求信息的内容\n- 必须直接输出 JSON 格式，不要任何前缀或后缀\n- 即使信息有限，也必须基于 URL 和标题做出合理推断并输出结果';
-  
+  const keyInfo = extractKeyInfo(metadata);
+
+  // 智能标签筛选：根据页面类型关键词过滤最相关的标签子集（而非简单截取前 50 个）
+  const relevantTags = filterRelevantTags(existingTags, analysis.category, analysis.type, 30);
+  const tagsStr = relevantTags.length > 0
+    ? relevantTags.join('、')
+    : (existingTags.length > 0 ? existingTags.slice(0, 30).join('、') : '暂无');
+
+  const commonRules = '\n\n## 强制要求\n- 严禁输出任何思考过程、解释或反问\n- 严禁输出"请提供"、"如果您能"、"我需要"等请求信息的内容\n- 必须直接输出 JSON 格式，不要任何前缀或后缀\n- 即使信息有限，也必须基于已有信息做出合理推断并输出结果';
+
+  // 构建结构化上下文
+  let contextStr = `网站名称：${card.title || domain}\n网站描述：${card.desc || '暂无'}`;
+  if (keyInfo?.bestDescription) contextStr += `\n网站自述：${keyInfo.bestDescription}`;
+  if (keyInfo?.keywords) contextStr += `\n关键词：${keyInfo.keywords}`;
+  contextStr += `\n页面类型：${pageTypeDesc}`;
+  if (analysis.category) contextStr += `\n页面分类：${analysis.category}`;
+  contextStr += `\n现有标签库：${tagsStr}\n输出JSON：`;
+
   return [
     {
       role: 'system',
-      content: `你是一个专业的互联网资源分类专家。你的任务是根据网站 URL、标题和描述，分配合适的分类标签。
+      content: `你是一个专业的互联网资源分类专家。你的任务是根据网站信息分配合适的分类标签。
 
 ## 任务
 为网站分配 2-4 个最合适的分类标签。
 
 ## 标签选择优先级
-1. **优先精确匹配**：从"现有标签"列表中选择最贴切的标签
+1. **优先精确匹配**：从"现有标签库"中选择最贴切的标签
 2. **语义近似匹配**：如果现有标签有近义词，优先使用现有标签
 3. **补充新标签**：仅当现有标签完全无法覆盖时，创建 1-2 个新标签
+
+## 标签层级建议
+每个网站优先覆盖不同维度的标签：
+- 1 个**领域标签**：说明属于什么大类（如：开发工具、设计工具、AI工具、效率工具、学习资源、社交娱乐、云服务）
+- 1 个**功能标签**：说明具体功能（如：代码托管、图片压缩、文档、数据库、版本控制）
+- 0-1 个**补充标签**：额外特征（如：开源、免费、协作、国产）
 
 ## 按页面类型选择标签
 
 ### 代码/开发类
-- 优先匹配：开发工具、代码托管、开源、GitHub、编程
+- 优先匹配：开发工具、代码托管、开源、编程
 - 常用新标签：版本控制、CI/CD、DevOps
 
 ### 文档/教程类
@@ -1281,12 +1324,11 @@ function buildTagsPrompt(card, existingTags) {
 - 按功能细分：图片工具、格式转换、数据处理
 
 ### AI/人工智能类
-- 优先匹配：AI、人工智能、机器学习、大模型
+- 优先匹配：AI、人工智能、大模型
 - 常用新标签：对话AI、图像生成、AI助手
 
 ### 电商/购物类
 - 优先匹配：电商、购物、网购
-- 按品类细分：数码、服饰、生鲜
 
 ### 社交/社区类
 - 优先匹配：社交、社区、论坛
@@ -1294,35 +1336,91 @@ function buildTagsPrompt(card, existingTags) {
 
 ### 设计/创意类
 - 优先匹配：设计、UI、创意、素材
-- 常用标签：设计工具、图标、配色
 
 ## 新标签规范
 - 长度：2-4 个中文字符
-- 通用性：避免过于具体（如具体产品名）
-- 可复用：其他网站也可能使用
+- 必须是名词或名词短语（不是动词或句子）
+- 描述类别/功能，而非具体产品名
+- 通用性检验：至少能被 5 个以上网站使用
+- ❌ 错误："tinypng图片压缩"（太具体）、"在线使用"（太泛）
+- ✅ 正确："图片工具"、"图片压缩"
 
 ## 输出格式
 {"tags":["现有标签1","现有标签2"],"newTags":["新标签1"]}${commonRules}`
     },
     // Few-shot 示例
-    { role: 'user', content: '网站名称：GitHub\n网站描述：全球领先的代码托管平台\n页面类型：代码托管\n现有标签：开发工具、代码托管、开源、设计、AI、效率工具\n输出JSON：' },
+    { role: 'user', content: '网站名称：GitHub\n网站描述：全球最大的代码托管平台\n页面类型：代码托管\n页面分类：code\n现有标签库：开发工具、代码托管、开源、设计、AI、效率工具\n输出JSON：' },
     { role: 'assistant', content: '{"tags":["开发工具","代码托管","开源"],"newTags":[]}' },
-    { role: 'user', content: '网站名称：Midjourney\n网站描述：AI 图像生成工具\n页面类型：AI/人工智能\n现有标签：AI、设计、效率工具\n输出JSON：' },
+    { role: 'user', content: '网站名称：Midjourney\n网站描述：AI 图像生成工具\n网站自述：Create beautiful artwork in seconds with AI.\n页面类型：AI/人工智能\n页面分类：ai\n现有标签库：AI、设计、效率工具\n输出JSON：' },
     { role: 'assistant', content: '{"tags":["AI","设计"],"newTags":["图像生成"]}' },
-    { role: 'user', content: '网站名称：淘宝\n网站描述：综合性电商平台\n页面类型：电子商务\n现有标签：购物、工具、AI\n输出JSON：' },
+    { role: 'user', content: '网站名称：淘宝\n网站描述：综合性电商平台\n页面类型：电子商务\n页面分类：ecommerce\n现有标签库：购物、工具、AI\n输出JSON：' },
     { role: 'assistant', content: '{"tags":["购物"],"newTags":["电商"]}' },
-    { role: 'user', content: '网站名称：未知网站\n网站描述：暂无\n页面类型：网站首页\n现有标签：工具、资源、网站\n输出JSON：' },
+    { role: 'user', content: '网站名称：Example\n网站描述：暂无\n页面类型：网站首页\n现有标签库：工具、资源、网站\n输出JSON：' },
     { role: 'assistant', content: '{"tags":["网站","资源"],"newTags":[]}' },
     // 实际请求
     {
       role: 'user',
-      content: `网站名称：${card.title || domain}
-网站描述：${card.desc || '暂无'}
-页面类型：${pageTypeDesc}${analysis.category ? `\n页面分类：${analysis.category}` : ''}
-现有标签：${tagsStr}
-输出JSON：`
+      content: contextStr
     }
   ];
+}
+
+/**
+ * 智能标签筛选：根据页面类型从现有标签中过滤出最相关的子集
+ * @param {string[]} existingTags 所有现有标签
+ * @param {string} category 页面分类（如 code, docs, ai 等）
+ * @param {string} type 页面类型（如 homepage, subpage 等）
+ * @param {number} maxCount 最大返回数量
+ * @returns {string[]} 筛选后的相关标签
+ */
+function filterRelevantTags(existingTags, category, type, maxCount = 30) {
+  if (!existingTags || existingTags.length === 0) return [];
+  if (existingTags.length <= maxCount) return existingTags;
+
+  // 按分类定义关键词映射
+  const categoryKeywords = {
+    code: ['开发', '代码', '编程', '开源', 'GitHub', 'Git', '版本', 'IDE', '框架', '库', 'API', '测试', '部署'],
+    docs: ['文档', '教程', '指南', '学习', '手册', '入门', '教程'],
+    ai: ['AI', '人工智能', '机器', '大模型', '深度学习', '神经网络', '智能'],
+    tool: ['工具', '效率', '在线', '转换', '处理', '生成', '计算', '格式化'],
+    design: ['设计', 'UI', 'UX', '创意', '素材', '图标', '配色', '原型'],
+    deploy: ['部署', '托管', '云服务', 'CDN', '服务器', '容器'],
+    database: ['数据库', '存储', '数据', 'SQL', '缓存'],
+    productivity: ['效率', '协作', '办公', '管理', '项目', '任务', '笔记'],
+    social: ['社交', '社区', '论坛', '聊天', '分享'],
+    video: ['视频', '直播', '影音', '播放'],
+    ecommerce: ['电商', '购物', '商城', '商品'],
+    blog: ['博客', '文章', '专栏', '写作'],
+    qa: ['问答', '知识', '问答社区'],
+    'tech-blog': ['技术', '开发', '前端', '后端', '编程'],
+    'tech-qa': ['技术', '开发', '编程', '代码'],
+    communication: ['通讯', '聊天', '协作', '会议'],
+    package: ['包管理', '依赖', '库', '组件'],
+    cloud: ['云', '云服务', '计算', '存储'],
+    network: ['网络', 'CDN', '安全', '加速']
+  };
+
+  const keywords = categoryKeywords[category] || [];
+  if (keywords.length === 0) return existingTags.slice(0, maxCount);
+
+  // 打分：匹配关键词的标签排前面
+  const scored = existingTags.map(tag => {
+    const lowerTag = tag.toLowerCase();
+    let score = 0;
+    for (const kw of keywords) {
+      if (lowerTag.includes(kw.toLowerCase())) {
+        score += 10;
+      }
+    }
+    // 通用标签（如"工具"、"资源"）给较低分
+    if (/^(工具|资源|网站|平台|服务|其他)$/.test(tag)) {
+      score += 2;
+    }
+    return { tag, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, maxCount).map(s => s.tag);
 }
 
 function parseUnifiedResponse(text, types, existingTags) {
@@ -1813,27 +1911,35 @@ router.post('/preview', authMiddleware, async (req, res) => {
     
     for (const card of cards) {
       const preview = { cardId: card.id, title: card.title, url: card.url, fields: {} };
-      
+
+      // 预览时抓取元数据（失败不影响预览）
+      let previewMetadata = null;
+      try {
+        previewMetadata = await fetchMetadata(card.url);
+      } catch (e) {
+        // 静默失败
+      }
+
       // 预览时强制使用 overwrite 模式，确保总是展示 AI 将生成的内容
       const previewStrategy = { ...strategy, mode: 'overwrite' };
-      
+
       for (const type of types) {
         try {
           // 直接调用 AI 生成，但不保存到数据库
           let generated = null;
-          
+
           if (type === 'name') {
-            const prompt = buildPromptWithStrategy(buildNamePrompt(card), previewStrategy);
+            const prompt = buildPromptWithStrategy(buildNamePrompt(card, previewMetadata), previewStrategy);
             const aiResponse = await callAI(config, prompt);
             generated = cleanName(aiResponse);
             preview.fields.name = { original: card.title || '', generated };
           } else if (type === 'description') {
-            const prompt = buildPromptWithStrategy(buildDescriptionPrompt(card), previewStrategy);
+            const prompt = buildPromptWithStrategy(buildDescriptionPrompt(card, previewMetadata), previewStrategy);
             const aiResponse = await callAI(config, prompt);
             generated = cleanDescription(aiResponse);
             preview.fields.description = { original: card.desc || '', generated };
           } else if (type === 'tags') {
-            const prompt = buildPromptWithStrategy(buildTagsPrompt(card, existingTags), previewStrategy);
+            const prompt = buildPromptWithStrategy(buildTagsPrompt(card, existingTags, previewMetadata), previewStrategy);
             const aiResponse = await callAI(config, prompt);
             const { tags, newTags } = parseTagsResponse(aiResponse, existingTags);
             generated = [...tags, ...newTags];
