@@ -35,13 +35,14 @@ async function fetchMetadata(url) {
       transformResponse: [(data) => {
         // 如果返回的不是 HTML，直接丢弃
         if (typeof data !== 'string') return null;
-        // 优化：只取到 </head> 之前的内容（节省内存）
+        // 优化：取到 </head> 后额外保留 10KB body 内容（用于提取可见品牌名）
         const headEnd = data.indexOf('</head>');
         if (headEnd > 0) {
-          return data.substring(0, headEnd + 7);
+          const bodyBudget = Math.min(10000, data.length - headEnd - 7);
+          return data.substring(0, headEnd + 7 + bodyBudget);
         }
-        // 没有 </head>，取前 30KB
-        return data.substring(0, 30000);
+        // 没有 </head>，取前 40KB（覆盖 head + 部分 body）
+        return data.substring(0, 40000);
       }]
     });
 
@@ -119,7 +120,10 @@ function parseMetadata(html, sourceUrl) {
     metadata.titleBrandPart = splitResult.brandPart;
   }
 
-  // 9. 清理所有字段：去除多余空白和换行
+  // 9. 从页面可见内容提取品牌名（h1、logo 文字等），作为补充来源
+  metadata.visibleBrand = extractVisibleBrand($);
+
+  // 10. 清理所有字段：去除多余空白和换行
   for (const key of Object.keys(metadata)) {
     metadata[key] = metadata[key]
       .replace(/[\r\n\t]+/g, ' ')
@@ -127,7 +131,7 @@ function parseMetadata(html, sourceUrl) {
       .trim();
   }
 
-  // 9. 检查是否有有效数据（至少有一个非空字段）
+  // 11. 检查是否有有效数据（至少有一个非空字段）
   const hasData = Object.values(metadata).some(v => v.length > 0);
   return hasData ? metadata : null;
 }
@@ -181,6 +185,58 @@ function splitHtmlTitle(title) {
 }
 
 /**
+ * 从页面可见内容中提取品牌名（h1、logo 文字等）
+ * 作为 og:site_name / title 拆分的补充来源
+ * @param {CheerioStatic} $ cheerio 实例
+ * @returns {string} 提取到的品牌名，未找到返回空字符串
+ */
+function extractVisibleBrand($) {
+  // 通用过滤：排除明显不是品牌名的文本
+  const NOISE = /^\s*$/;
+  const SKIP_TEXT = /^(home|首页|主页|skip\s*to|menu|nav|search|登录|注册|sign\s*(in|up)|log\s*in)$/i;
+
+  function isClean(text) {
+    if (!text) return false;
+    const t = text.trim();
+    return t.length >= 1 && t.length <= 40 && !NOISE.test(t) && !SKIP_TEXT.test(t);
+  }
+
+  // 1. 第一个 <h1>（最常见的站点/品牌标识）
+  const h1 = $('h1').first();
+  if (h1.length) {
+    const text = h1.clone().children('script,style').remove().end().text().trim();
+    if (isClean(text)) return text;
+  }
+
+  // 2. 常见品牌/Logo 相关的 CSS 选择器（只取文本内容最短且合理的那个）
+  const brandSelectors = [
+    '.site-name', '.site-title', '.brand', '.logo-text',
+    '.navbar-brand', '#site-title', '.blog-title',
+    '[class*="site-name"]', '[class*="logo-text"]'
+  ];
+  let bestCandidate = '';
+  for (const sel of brandSelectors) {
+    const el = $(sel).first();
+    if (el.length) {
+      const text = el.clone().children('script,style').remove().end().text().trim();
+      if (isClean(text) && (!bestCandidate || text.length <= bestCandidate.length)) {
+        bestCandidate = text;
+      }
+    }
+  }
+  if (bestCandidate) return bestCandidate;
+
+  // 3. Logo 图片的 alt 文字
+  const logoImg = $('img[class*="logo" i], img[src*="logo" i], img[alt*="logo" i]').first();
+  if (logoImg.length) {
+    const alt = logoImg.attr('alt');
+    if (isClean(alt)) return alt.trim();
+  }
+
+  return '';
+}
+
+/**
  * 获取 meta 标签的 content 属性
  */
 function getMetaContent($, attrName, attrValue) {
@@ -207,8 +263,8 @@ function getMetaContent($, attrName, attrValue) {
 function extractKeyInfo(metadata) {
   if (!metadata) return null;
 
-  // 品牌名：优先从 og:site_name 获取，其次从拆分后的 title 品牌部分，最后从 meta site_name
-  const brandName = metadata.ogSiteName || metadata.titleBrandPart || metadata.siteName || '';
+  // 品牌名优先级：og:site_name > 页面可见品牌(h1/logo) > title拆分品牌 > meta site_name
+  const brandName = metadata.ogSiteName || metadata.visibleBrand || metadata.titleBrandPart || metadata.siteName || '';
 
   // 页面标题：优先 og:title，其次 twitter:title，最后拆分后的 title 页面部分
   const pageTitle = metadata.ogTitle || metadata.twitterTitle || metadata.titlePagePart || metadata.title || '';
