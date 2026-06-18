@@ -1029,12 +1029,13 @@ function buildUnifiedPrompt(card, types, existingTags, metadata = null) {
   // 构建结构化上下文信息
   let contextInfo = `【网站URL】${card.url}`;
   if (currentName) contextInfo += `\n【原始标题】${currentName}`;
-  if (keyInfo?.bestTitle && keyInfo.bestTitle !== currentName) contextInfo += `\n【网站标识名】${keyInfo.bestTitle}`;
+  if (keyInfo?.brandName) contextInfo += `\n【品牌名】${keyInfo.brandName}`;
+  if (keyInfo?.pageTitle && keyInfo.pageTitle !== currentName && keyInfo.pageTitle !== keyInfo.brandName) contextInfo += `\n【页面标题】${keyInfo.pageTitle}`;
   if (keyInfo?.bestDescription) contextInfo += `\n【网站自述】${keyInfo.bestDescription}`;
   if (card.desc && (!keyInfo?.bestDescription || card.desc !== keyInfo.bestDescription)) contextInfo += `\n【当前描述】${card.desc}`;
   contextInfo += `\n【页面类型】${pageTypeDesc}`;
   if (analysis.brand) contextInfo += `\n【品牌识别】${analysis.brand}`;
-  if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand) contextInfo += ` (${keyInfo.siteName})`;
+  if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand && keyInfo.siteName !== keyInfo.brandName) contextInfo += ` (${keyInfo.siteName})`;
   if (analysis.hints.length > 0) contextInfo += `\n【分析提示】${analysis.hints.join('; ')}`;
   contextInfo += `\n【现有标签库】${tagsStr}`;
 
@@ -1049,7 +1050,7 @@ function buildUnifiedPrompt(card, types, existingTags, metadata = null) {
 ### 1. 名称 (name) 生成规则
 按以下优先级依次判断，命中即停：
 1. 登录/认证/注册页 → 直接输出品牌名，忽略所有功能词
-2. 有明确品牌标识（网站标识名或品牌识别） → 使用该品牌名
+2. 有明确【品牌名】 → 首页直接使用该品牌名；子页面用 "[品牌名] [主题]"
 3. 文档/教程页 → "[品牌] [主题关键词]"
 4. 在线工具/应用 → "[品牌] [工具类型]"
 5. 具体文章/帖子 → 精简文章标题（去掉作者和站点名）
@@ -1077,19 +1078,19 @@ function buildUnifiedPrompt(card, types, existingTags, metadata = null) {
     },
     // Few-shot 示例：使用结构化格式，覆盖多种场景
     // 1. 代码托管平台首页（有元数据）
-    { role: 'user', content: '【网站URL】https://github.com/\n【原始标题】GitHub: Let\'s build from here · GitHub\n【网站标识名】GitHub\n【网站自述】GitHub is where over 100 million developers shape the future of software, together.\n【页面类型】网站首页\n【品牌识别】GitHub\n【现有标签库】开发工具、代码托管、开源、AI' },
+    { role: 'user', content: '【网站URL】https://github.com/\n【原始标题】GitHub: Let\'s build from here · GitHub\n【品牌名】GitHub\n【网站自述】GitHub is where over 100 million developers shape the future of software, together.\n【页面类型】网站首页\n【品牌识别】GitHub\n【现有标签库】开发工具、代码托管、开源、AI' },
     { role: 'assistant', content: '{"name":"GitHub","description":"全球最大的代码托管与开源协作开发平台","tags":["开发工具","代码托管"]}' },
 
     // 2. 技术文档页（有元数据）
-    { role: 'user', content: '【网站URL】https://vuejs.org/guide/introduction.html\n【原始标题】Introduction | Vue.js\n【网站自述】Vue.js - The Progressive JavaScript Framework\n【页面类型】文档/教程\n【品牌识别】Vue\n【现有标签库】前端框架、JavaScript、文档' },
+    { role: 'user', content: '【网站URL】https://vuejs.org/guide/introduction.html\n【原始标题】Introduction | Vue.js\n【品牌名】Vue.js\n【网站自述】Vue.js - The Progressive JavaScript Framework\n【页面标题】Introduction\n【页面类型】文档/教程\n【品牌识别】Vue\n【现有标签库】前端框架、JavaScript、文档' },
     { role: 'assistant', content: '{"name":"Vue 入门指南","description":"Vue.js 框架核心概念与基础使用方法详解","tags":["前端框架","JavaScript","文档"]}' },
 
     // 3. 登录/认证页面（有元数据，需忽略登录行为）
-    { role: 'user', content: '【网站URL】https://auth.example.com/login?redirect=/dashboard\n【原始标题】Sign In - Example Platform\n【网站标识名】Example Platform\n【页面类型】登录/认证\n【品牌识别】Example\n【分析提示】URL 参数表明这是登录/认证流程页面\n【现有标签库】SaaS、效率工具' },
+    { role: 'user', content: '【网站URL】https://auth.example.com/login?redirect=/dashboard\n【原始标题】Sign In - Example Platform\n【品牌名】Example Platform\n【页面类型】登录/认证\n【品牌识别】Example\n【分析提示】URL 参数表明这是登录/认证流程页面\n【现有标签库】SaaS、效率工具' },
     { role: 'assistant', content: '{"name":"Example Platform","description":"企业级协作与项目管理平台","tags":["SaaS","效率工具"]}' },
 
     // 4. 在线工具（有元数据）
-    { role: 'user', content: '【网站URL】https://tinypng.com/\n【原始标题】TinyPNG – Compress WebP, PNG and JPEG images intelligently\n【网站自述】Optimize your images with a perfect balance of quality and file size.\n【页面类型】在线工具\n【品牌识别】TinyPNG\n【现有标签库】图片工具、压缩、设计' },
+    { role: 'user', content: '【网站URL】https://tinypng.com/\n【原始标题】TinyPNG – Compress WebP, PNG and JPEG images intelligently\n【品牌名】TinyPNG\n【网站自述】Optimize your images with a perfect balance of quality and file size.\n【页面类型】在线工具\n【品牌识别】TinyPNG\n【现有标签库】图片工具、压缩、设计' },
     { role: 'assistant', content: '{"name":"TinyPNG","description":"智能压缩 PNG/JPEG/WebP 图片，最高减少 80% 体积","tags":["图片工具","压缩"]}' },
 
     // 5. 问答社区
@@ -1097,7 +1098,7 @@ function buildUnifiedPrompt(card, types, existingTags, metadata = null) {
     { role: 'assistant', content: '{"name":"知乎","description":"中文互联网高质量问答社区与知识分享平台","tags":["问答","知识","社区"]}' },
 
     // 6. AI 产品
-    { role: 'user', content: '【网站URL】https://chat.openai.com/\n【原始标题】ChatGPT\n【网站标识名】ChatGPT\n【网站自述】ChatGPT helps you get answers, find inspiration and be more productive.\n【页面类型】AI/人工智能\n【品牌识别】ChatGPT\n【现有标签库】AI、聊天机器人、效率工具' },
+    { role: 'user', content: '【网站URL】https://chat.openai.com/\n【原始标题】ChatGPT\n【品牌名】ChatGPT\n【网站自述】ChatGPT helps you get answers, find inspiration and be more productive.\n【页面类型】AI/人工智能\n【品牌识别】ChatGPT\n【现有标签库】AI、聊天机器人、效率工具' },
     { role: 'assistant', content: '{"name":"ChatGPT","description":"OpenAI 开发的智能对话助手，支持问答、写作与编程","tags":["AI","聊天机器人"]}' },
 
     // 7. 个人博客（信息匮乏场景）
@@ -1125,8 +1126,9 @@ function buildNamePrompt(card, metadata = null) {
 
   // 构建结构化上下文
   let contextStr = `网站地址：${card.url}\n当前抓取名：${card.title || '无'}`;
-  if (keyInfo?.bestTitle && keyInfo.bestTitle !== card.title) contextStr += `\n网站标识名：${keyInfo.bestTitle}`;
-  if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand) contextStr += `\n站点名称：${keyInfo.siteName}`;
+  if (keyInfo?.brandName) contextStr += `\n品牌名：${keyInfo.brandName}`;
+  if (keyInfo?.pageTitle && keyInfo.pageTitle !== card.title && keyInfo.pageTitle !== keyInfo.brandName) contextStr += `\n页面标题：${keyInfo.pageTitle}`;
+  if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand && keyInfo.siteName !== keyInfo.brandName) contextStr += `\n站点名称：${keyInfo.siteName}`;
   contextStr += `\n页面类型：${pageTypeDesc}`;
   if (analysis.brand) contextStr += `\n品牌：${analysis.brand}`;
   if (analysis.hints.length > 0) contextStr += `\n分析提示：${analysis.hints.join('; ')}`;
@@ -1140,7 +1142,7 @@ function buildNamePrompt(card, metadata = null) {
 ## 命名决策树（按优先级依次判断，命中即停）
 
 1. **登录/认证/注册页** → 直接输出品牌名，忽略所有功能词
-2. **有明确品牌标识**（网站标识名或站点名称） → 使用该品牌名
+2. **有"品牌名"字段** → 首页直接使用该品牌名；子页面用 "[品牌名] [主题]"
 3. **文档/教程/指南页** → "[品牌] [主题关键词]"
 4. **在线工具/应用** → "[品牌] [工具类型]"
 5. **具体文章/帖子** → 精简文章标题（去掉作者名和站点名）
@@ -1162,17 +1164,17 @@ function buildNamePrompt(card, metadata = null) {
 - 中英混合：2-40 字符${commonRules}`
     },
     // Few-shot 示例（覆盖更多场景）
-    { role: 'user', content: '网站地址：https://github.com/\n当前抓取名：GitHub: Let\'s build from here · GitHub\n网站标识名：GitHub\n页面类型：代码托管\n品牌：GitHub\n输出名称：' },
+    { role: 'user', content: '网站地址：https://github.com/\n当前抓取名：GitHub: Let\'s build from here · GitHub\n品牌名：GitHub\n页面类型：代码托管\n品牌：GitHub\n输出名称：' },
     { role: 'assistant', content: 'GitHub' },
-    { role: 'user', content: '网站地址：https://auth.business.gemini.google/login\n当前抓取名：Sign in - Gemini\n页面类型：登录/认证\n品牌：Gemini\n分析提示：URL 参数表明这是登录/认证流程页面\n输出名称：' },
+    { role: 'user', content: '网站地址：https://auth.business.gemini.google/login\n当前抓取名：Sign in - Gemini\n品牌名：Gemini\n页面类型：登录/认证\n品牌：Gemini\n分析提示：URL 参数表明这是登录/认证流程页面\n输出名称：' },
     { role: 'assistant', content: 'Gemini' },
-    { role: 'user', content: '网站地址：https://react.dev/learn/tutorial-tic-tac-toe\n当前抓取名：Tutorial: Tic-Tac-Toe – React\n页面类型：文档/教程\n品牌：React\n输出名称：' },
+    { role: 'user', content: '网站地址：https://react.dev/learn/tutorial-tic-tac-toe\n当前抓取名：Tutorial: Tic-Tac-Toe – React\n品牌名：React\n页面标题：Tutorial: Tic-Tac-Toe\n页面类型：文档/教程\n品牌：React\n输出名称：' },
     { role: 'assistant', content: 'React 井字棋教程' },
-    { role: 'user', content: '网站地址：https://www.taobao.com/\n当前抓取名：淘宝网 - 淘！我喜欢\n站点名称：淘宝\n页面类型：电子商务\n品牌：淘宝\n输出名称：' },
+    { role: 'user', content: '网站地址：https://www.taobao.com/\n当前抓取名：淘宝网 - 淘！我喜欢\n品牌名：淘宝\n页面类型：电子商务\n品牌：淘宝\n输出名称：' },
     { role: 'assistant', content: '淘宝' },
     { role: 'user', content: '网站地址：https://example.com/\n当前抓取名：无\n页面类型：网站首页\n品牌：Example\n输出名称：' },
     { role: 'assistant', content: 'Example' },
-    { role: 'user', content: '网站地址：https://docs.github.com/en/actions\n当前抓取名：GitHub Actions documentation - GitHub Docs\n网站标识名：GitHub Docs\n页面类型：文档/教程\n品牌：GitHub\n输出名称：' },
+    { role: 'user', content: '网站地址：https://docs.github.com/en/actions\n当前抓取名：GitHub Actions documentation - GitHub Docs\n品牌名：GitHub Docs\n页面标题：GitHub Actions documentation\n页面类型：文档/教程\n品牌：GitHub\n输出名称：' },
     { role: 'assistant', content: 'GitHub Actions 文档' },
     // 实际请求
     {
@@ -1192,11 +1194,12 @@ function buildDescriptionPrompt(card, metadata = null) {
 
   // 构建结构化上下文
   let contextStr = `网站名称：${card.title || domain}\n网站地址：${card.url}`;
+  if (keyInfo?.brandName) contextStr += `\n品牌名：${keyInfo.brandName}`;
   if (keyInfo?.bestDescription) contextStr += `\n网站自述：${keyInfo.bestDescription}（仅供参考提炼，不要照搬）`;
   if (card.desc && (!keyInfo?.bestDescription || card.desc !== keyInfo.bestDescription)) contextStr += `\n参考描述：${card.desc}`;
   contextStr += `\n页面类型：${pageTypeDesc}`;
   if (analysis.brand) contextStr += `\n品牌：${analysis.brand}`;
-  if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand) contextStr += ` (${keyInfo.siteName})`;
+  if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand && keyInfo.siteName !== keyInfo.brandName) contextStr += ` (${keyInfo.siteName})`;
   if (analysis.hints.length > 0) contextStr += `\n分析提示：${analysis.hints.join('; ')}`;
   contextStr += '\n输出描述：';
 

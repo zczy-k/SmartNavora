@@ -109,7 +109,17 @@ function parseMetadata(html, sourceUrl) {
   // 7. <link rel="canonical">
   metadata.canonical = $('link[rel="canonical"]').attr('href') || '';
 
-  // 8. 清理所有字段：去除多余空白和换行
+  // 8. 拆分 HTML <title> 为页面标题部分和站点名称部分
+  // 常见格式："页面标题 - 站点名"、"页面标题 | 站点名"、"页面标题 · 站点名"
+  metadata.titlePagePart = '';
+  metadata.titleBrandPart = '';
+  if (metadata.title) {
+    const splitResult = splitHtmlTitle(metadata.title);
+    metadata.titlePagePart = splitResult.pagePart;
+    metadata.titleBrandPart = splitResult.brandPart;
+  }
+
+  // 9. 清理所有字段：去除多余空白和换行
   for (const key of Object.keys(metadata)) {
     metadata[key] = metadata[key]
       .replace(/[\r\n\t]+/g, ' ')
@@ -120,6 +130,54 @@ function parseMetadata(html, sourceUrl) {
   // 9. 检查是否有有效数据（至少有一个非空字段）
   const hasData = Object.values(metadata).some(v => v.length > 0);
   return hasData ? metadata : null;
+}
+
+/**
+ * 拆分 HTML <title> 为页面部分和品牌部分
+ * 常见格式："页面标题 - 站点名"、"页面标题 | 站点名"、"站点名: 页面标题"
+ * @param {string} title HTML title 标签内容
+ * @returns {{ pagePart: string, brandPart: string }}
+ */
+function splitHtmlTitle(title) {
+  if (!title) return { pagePart: '', brandPart: '' };
+
+  // 按优先级尝试不同分隔符
+  const separators = [' | ', ' – ', ' — ', ' · ', ' - ', ' – ', ' — '];
+  let parts = null;
+
+  for (const sep of separators) {
+    const idx = title.indexOf(sep);
+    if (idx > 0) {
+      parts = [title.substring(0, idx).trim(), title.substring(idx + sep.length).trim()];
+      break;
+    }
+  }
+
+  // 尝试冒号分隔（如 "GitHub: Let's build from here"）
+  if (!parts) {
+    const colonIdx = title.indexOf(': ');
+    if (colonIdx > 0 && colonIdx < 30) {
+      parts = [title.substring(0, colonIdx).trim(), title.substring(colonIdx + 2).trim()];
+    }
+  }
+
+  if (!parts || parts.length < 2) {
+    return { pagePart: title, brandPart: '' };
+  }
+
+  const [left, right] = parts;
+
+  // 判断哪部分是品牌名：通常品牌名更短，且出现在末尾
+  // 例："Introduction | Vue.js" → pagePart="Introduction", brandPart="Vue.js"
+  // 例："GitHub: Let's build" → pagePart="Let's build", brandPart="GitHub"
+  // 策略：如果左侧出现在右侧中（或反之），短的是品牌
+  if (right.length <= left.length) {
+    // 右侧更短 → 右侧是品牌（如 "... | Vue.js"）
+    return { pagePart: left, brandPart: right };
+  } else {
+    // 左侧更短 → 左侧是品牌（如 "GitHub: ..."）
+    return { pagePart: right, brandPart: left };
+  }
 }
 
 /**
@@ -149,9 +207,17 @@ function getMetaContent($, attrName, attrValue) {
 function extractKeyInfo(metadata) {
   if (!metadata) return null;
 
+  // 品牌名：优先从 og:site_name 获取，其次从拆分后的 title 品牌部分，最后从 meta site_name
+  const brandName = metadata.ogSiteName || metadata.titleBrandPart || metadata.siteName || '';
+
+  // 页面标题：优先 og:title，其次 twitter:title，最后拆分后的 title 页面部分
+  const pageTitle = metadata.ogTitle || metadata.twitterTitle || metadata.titlePagePart || metadata.title || '';
+
   return {
-    // 最佳标题（优先级：og:title > site_name > title）
-    bestTitle: metadata.ogTitle || metadata.ogSiteName || metadata.siteName || metadata.title || '',
+    // 品牌名（用于卡片命名时的品牌识别）
+    brandName: brandName,
+    // 页面标题（完整的页面级标题）
+    pageTitle: pageTitle,
     // 最佳描述（优先级：og:description > twitter:description > meta description）
     bestDescription: metadata.ogDescription || metadata.twitterDescription || metadata.description || '',
     // 站点名称
