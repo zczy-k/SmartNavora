@@ -1459,7 +1459,8 @@
                                   </div>
                                   <div class="confirm-row">
                                       <span class="confirm-label">分组：</span>
-                                      <input type="text" class="confirm-value confirm-section-input" id="confirmSectionText" placeholder="可选，如：AI 工具、开发环境">
+                                      <input type="text" class="confirm-value confirm-section-input" id="confirmSectionText" placeholder="可选，如：AI 工具、开发环境" list="sectionDatalist">
+                                      <datalist id="sectionDatalist"></datalist>
                                   </div>
                                   <div class="confirm-row">
                                       <span class="confirm-label">链接：</span>
@@ -1685,6 +1686,15 @@
                   chrome.storage.sync.get([sectionKey], (result) => {
                       const sectionInput = dialogShadowRoot.getElementById('confirmSectionText');
                       if (sectionInput) sectionInput.value = result[sectionKey] || '';
+                  });
+                  // 加载已有分组名用于自动补全
+                  chrome.runtime.sendMessage({ action: 'getSections', subMenuId: selectedSubMenuId }, (resp) => {
+                      if (resp?.success && resp.sections?.length > 0) {
+                          const datalist = dialogShadowRoot.getElementById('sectionDatalist');
+                          if (datalist) {
+                              datalist.innerHTML = resp.sections.map(s => `<option value="${escapeHtml(s)}">`).join('');
+                          }
+                      }
                   });
                   checkDuplicateForConfirmation(url, customTitle);
               } else {

@@ -1218,6 +1218,33 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
             });
         return true;
     }
+
+    if (request.action === 'getSections') {
+        (async () => {
+            try {
+                const config = await chrome.storage.sync.get(['navUrl']);
+                const token = (await chrome.storage.local.get(['navAuthToken'])).navAuthToken;
+                if (!config.navUrl || !token) {
+                    sendResponse({ success: false, error: '未配置或未登录' });
+                    return;
+                }
+                const navServerUrl = config.navUrl.replace(/\/$/, '');
+                const params = request.subMenuId ? `?sub_menu_id=${request.subMenuId}` : '';
+                const resp = await fetch(`${navServerUrl}/api/cards/sections${params}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!resp.ok) {
+                    sendResponse({ success: false, error: '获取分组失败' });
+                    return;
+                }
+                const sections = await resp.json();
+                sendResponse({ success: true, sections });
+            } catch (e) {
+                sendResponse({ success: false, error: e.message });
+            }
+        })();
+        return true;
+    }
     
     if (request.action === 'getMenus') {
         (async () => {
