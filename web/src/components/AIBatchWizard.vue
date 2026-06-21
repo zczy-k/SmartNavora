@@ -24,7 +24,6 @@
               <div class="checkbox-group">
                 <label><input type="checkbox" v-model="filters.status" value="empty_name" @change="applyFilter" /> 缺名称</label>
                 <label><input type="checkbox" v-model="filters.status" value="empty_desc" @change="applyFilter" /> 缺描述</label>
-                <label><input type="checkbox" v-model="filters.status" value="empty_tags" @change="applyFilter" /> 缺标签</label>
               </div>
             </div>
 
@@ -38,21 +37,6 @@
                 <option value="">全部子菜单</option>
                 <option v-for="s in subMenus" :key="s.id" :value="s.id">{{ s.name }}</option>
               </select>
-            </div>
-
-            <div class="filter-section" v-if="tags.length">
-              <h4>标签筛选 <span class="hint">(可选)</span></h4>
-              <div class="tag-filter-group">
-                <div class="tag-filter-row">
-                  <span class="tag-filter-label">包含标签：</span>
-                  <div class="tag-select-list">
-                    <label v-for="t in tags.slice(0, 20)" :key="t.id" class="tag-checkbox">
-                      <input type="checkbox" :value="t.id" v-model="filters.tagIds" @change="applyFilter" />
-                      <span class="tag-name" :style="{ background: t.color || '#e5e7eb' }">{{ t.name }}</span>
-                    </label>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div class="filter-result">
@@ -76,7 +60,6 @@
             <div class="checkbox-group">
               <label><input type="checkbox" v-model="strategy.types" value="name" /> 名称</label>
               <label><input type="checkbox" v-model="strategy.types" value="description" /> 描述</label>
-              <label><input type="checkbox" v-model="strategy.types" value="tags" /> 标签</label>
             </div>
           </div>
 
@@ -264,7 +247,7 @@
 </template>
 
 <script>
-import { getMenus, getTags, aiFilterCards, aiPreview, aiStartBatchTask, aiStopTask } from '../api';
+import { getMenus, aiFilterCards, aiPreview, aiStartBatchTask, aiStopTask } from '../api';
 
 export default {
   name: 'AIBatchWizard',
@@ -277,11 +260,10 @@ export default {
     return {
       step: 0,
       stepNames: ['选择范围', '生成策略', '效果预览', '执行任务'],
-      fieldLabels: { name: '名称', description: '描述', tags: '标签' },
+      fieldLabels: { name: '名称', description: '描述' },
       menus: [],
       subMenus: [],
-      tags: [],
-      filters: { status: ['empty_name', 'empty_desc'], menuId: '', subMenuId: '', tagIds: [] },
+      filters: { status: ['empty_name', 'empty_desc'], menuId: '', subMenuId: '' },
       filteredCards: [],
       filtering: false,
       strategy: { types: ['name', 'description'], mode: 'fill', style: 'default', customPrompt: '' },
@@ -459,9 +441,8 @@ export default {
       this.isRetrying = false;
 
       try {
-        const [menuRes, tagRes] = await Promise.all([getMenus(), getTags()]);
+        const menuRes = await getMenus();
         this.menus = menuRes.data || [];
-        this.tags = tagRes.data || [];
       } catch {}
       this.applyFilter();
     },
@@ -477,7 +458,6 @@ export default {
         const params = { status: this.filters.status };
         if (this.filters.menuId) params.menuIds = [this.filters.menuId];
         if (this.filters.subMenuId) params.subMenuIds = [this.filters.subMenuId];
-        if (this.filters.tagIds?.length) params.tagIds = this.filters.tagIds;
         const { data } = await aiFilterCards(params);
         this.filteredCards = data.cards || [];
       } catch { this.filteredCards = []; }
@@ -667,15 +647,6 @@ textarea.input { resize: vertical; }
 .more-hint { padding: 8px 12px; text-align: center; color: #6b7280; font-size: 13px; background: #f9fafb; pointer-events: none; }
 
 .filter-section h4 .hint { font-weight: normal; color: #9ca3af; font-size: 12px; }
-.tag-filter-group { margin-top: 8px; }
-.tag-filter-row { display: flex; align-items: flex-start; gap: 8px; }
-.tag-filter-label { font-size: 13px; color: #6b7280; min-width: 70px; padding-top: 4px; pointer-events: none; }
-.tag-select-list { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; }
-.tag-checkbox { display: flex; align-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.tag-checkbox input { display: none; }
-.tag-checkbox .tag-name { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; color: #374151; border: 1px solid transparent; transition: all 0.15s; pointer-events: none; }
-.tag-checkbox input:checked + .tag-name { border-color: #3b82f6; box-shadow: 0 0 0 1px #3b82f6; }
-.tag-checkbox:hover .tag-name { opacity: 0.8; }
 
 .preview-actions { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
 .preview-hint { text-align: center; color: #6b7280; padding: 40px 20px; pointer-events: none; }

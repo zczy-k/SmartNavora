@@ -323,33 +323,25 @@ function deleteCardsByIds(cardIds, clientId) {
           return;
         }
 
-        db.run(`DELETE FROM card_tags WHERE card_id IN (${placeholders})`, cardIds, (tagErr) => {
-          if (tagErr) {
+        db.run(`DELETE FROM cards WHERE id IN (${placeholders})`, cardIds, function(cardErr) {
+          if (cardErr) {
             db.run('ROLLBACK');
-            reject(new Error('删除标签关联失败: ' + tagErr.message));
+            reject(new Error('删除卡片失败: ' + cardErr.message));
             return;
           }
 
-          db.run(`DELETE FROM cards WHERE id IN (${placeholders})`, cardIds, function(cardErr) {
-            if (cardErr) {
-              db.run('ROLLBACK');
-              reject(new Error('删除卡片失败: ' + cardErr.message));
+          const deletedCount = this.changes;
+          db.run('COMMIT', (commitErr) => {
+            if (commitErr) {
+              reject(new Error('提交事务失败: ' + commitErr.message));
               return;
             }
 
-            const deletedCount = this.changes;
-            db.run('COMMIT', (commitErr) => {
-              if (commitErr) {
-                reject(new Error('提交事务失败: ' + commitErr.message));
-                return;
-              }
-
-              triggerDebouncedBackup(clientId, { type: 'cards_updated' });
-              resolve({
-                success: true,
-                deleted: deletedCount,
-                message: `成功删除 ${deletedCount} 张卡片`
-              });
+            triggerDebouncedBackup(clientId, { type: 'cards_updated' });
+            resolve({
+              success: true,
+              deleted: deletedCount,
+              message: `成功删除 ${deletedCount} 张卡片`
             });
           });
         });
@@ -374,52 +366,24 @@ router.get('/', (req, res) => {
       return res.json({ cards: [], cardsByCategory: {} });
     }
     
-    const cardIds = cards.map(c => c.id);
-    const placeholders = cardIds.map(() => '?').join(',');
-    
-    db.all(
-      `SELECT ct.card_id, t.id, t.name, t.color 
-       FROM card_tags ct 
-       JOIN tags t ON ct.tag_id = t.id 
-       WHERE ct.card_id IN (${placeholders})
-       ORDER BY t."order", t.name`,
-      cardIds,
-      (err, tagRows) => {
-        if (err) return res.status(500).json({ error: err.message });
-        
-        const tagsByCard = {};
-        tagRows.forEach(tag => {
-          if (!tagsByCard[tag.card_id]) {
-            tagsByCard[tag.card_id] = [];
-          }
-          tagsByCard[tag.card_id].push({
-            id: tag.id,
-            name: tag.name,
-            color: tag.color
-          });
-        });
-        
-        const cardsByCategory = {};
-        cards.forEach(card => {
-          const menuId = card.menu_id || card.parent_menu_id;
-          const key = `${menuId}_${card.sub_menu_id || 'null'}`;
-          if (!cardsByCategory[key]) {
-            cardsByCategory[key] = [];
-          }
-          cardsByCategory[key].push({
-            ...card,
-            menu_id: menuId,
-            tags: tagsByCard[card.id] || []
-          });
-        });
-        
-        res.json({ cardsByCategory });
+    const cardsByCategory = {};
+    cards.forEach(card => {
+      const menuId = card.menu_id || card.parent_menu_id;
+      const key = `${menuId}_${card.sub_menu_id || 'null'}`;
+      if (!cardsByCategory[key]) {
+        cardsByCategory[key] = [];
       }
-    );
+      cardsByCategory[key].push({
+        ...card,
+        menu_id: menuId
+      });
+    });
+    
+    res.json({ cardsByCategory });
   });
 });
 
-// 获取指定菜单的卡片（包含标签）
+// 获取指定菜单的卡片
 router.get('/:menuId', (req, res) => {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   
@@ -448,40 +412,12 @@ router.get('/:menuId', (req, res) => {
       return res.json([]);
     }
     
-    const cardIds = cards.map(c => c.id);
-    const placeholders = cardIds.map(() => '?').join(',');
+    const result = cards.map(card => ({
+      ...card,
+      menu_id: card.menu_id || card.parent_menu_id || parseInt(menuId)
+    }));
     
-    db.all(
-      `SELECT ct.card_id, t.id, t.name, t.color 
-       FROM card_tags ct 
-       JOIN tags t ON ct.tag_id = t.id 
-       WHERE ct.card_id IN (${placeholders})
-       ORDER BY t."order", t.name`,
-      cardIds,
-      (err, tagRows) => {
-        if (err) return res.status(500).json({error: err.message});
-        
-        const tagsByCard = {};
-        tagRows.forEach(tag => {
-          if (!tagsByCard[tag.card_id]) {
-            tagsByCard[tag.card_id] = [];
-          }
-          tagsByCard[tag.card_id].push({
-            id: tag.id,
-            name: tag.name,
-            color: tag.color
-          });
-        });
-        
-        const result = cards.map(card => ({
-          ...card,
-          menu_id: card.menu_id || card.parent_menu_id || parseInt(menuId),
-          tags: tagsByCard[card.id] || []
-        }));
-        
-        res.json(result);
-      }
-    );
+    res.json(result);
   });
 });
 
@@ -544,9 +480,9 @@ router.patch('/batch-update', auth, (req, res) => {
   });
 });
 
-// 新增卡片（含标签）
+// 新增卡片
 router.post('/', auth, (req, res) => {
-  const { menu_id, sub_menu_id, title, url, logo_url, desc, order, tagIds } = req.body;
+  const { menu_id, sub_menu_id, title, url, logo_url, desc, order } = req.body;
   const clientId = req.headers['x-client-id'];
   
   // 先检查是否重复
@@ -576,35 +512,20 @@ router.post('/', auth, (req, res) => {
         
         const cardId = this.lastID;
         
-        // 如果有标签，关联标签
-        if (tagIds && Array.isArray(tagIds) && tagIds.length > 0) {
-          const values = tagIds.map(tagId => `(${cardId}, ${tagId})`).join(',');
-          db.run(`INSERT INTO card_tags (card_id, tag_id) VALUES ${values}`, (err) => {
-            if (err) return res.status(500).json({error: err.message});
-            
-            triggerDebouncedBackup(clientId, { type: 'cards_updated' });
-            
-            // 异步触发 AI 自动生成（不阻塞响应）
-            setImmediate(() => autoGenerateForCards([cardId]));
-            
-            res.json({ id: cardId });
-          });
-        } else {
-          triggerDebouncedBackup(clientId, { type: 'cards_updated' });
-          
-          // 异步触发 AI 自动生成（不阻塞响应）
-          setImmediate(() => autoGenerateForCards([cardId]));
-          
-          res.json({ id: cardId });
-        }
+        triggerDebouncedBackup(clientId, { type: 'cards_updated' });
+        
+        // 异步触发 AI 自动生成（不阻塞响应）
+        setImmediate(() => autoGenerateForCards([cardId]));
+        
+        res.json({ id: cardId });
       }
     );
   });
 });
 
-// 更新卡片（含标签）
+// 更新卡片
 router.put('/:id', auth, (req, res) => {
-  const { menu_id, sub_menu_id, title, url, logo_url, desc, order, tagIds } = req.body;
+  const { menu_id, sub_menu_id, title, url, logo_url, desc, order } = req.body;
   const { id } = req.params;
   const clientId = req.headers['x-client-id'];
   
@@ -621,36 +542,17 @@ router.put('/:id', auth, (req, res) => {
         return res.status(404).json({error: '卡片不存在'});
       }
       
-      // 删除旧的标签关联
-      db.run('DELETE FROM card_tags WHERE card_id=?', [id], (err) => {
+      // 查询更新后的卡片数据返回给前端
+      db.get('SELECT * FROM cards WHERE id=?', [id], (err, card) => {
         if (err) return res.status(500).json({error: err.message});
+        if (!card) return res.status(404).json({error: '卡片不存在'});
         
-        // 处理标签关联的函数
-        const finishUpdate = () => {
-          // 查询更新后的卡片数据返回给前端
-          db.get('SELECT * FROM cards WHERE id=?', [id], (err, card) => {
-            if (err) return res.status(500).json({error: err.message});
-            if (!card) return res.status(404).json({error: '卡片不存在'});
-            
-            triggerDebouncedBackup(clientId, { type: 'cards_updated' }); // 触发自动备份和SSE广播
-            res.json({ 
-              success: true,
-              changed: changes,
-              card: card
-            });
-          });
-        };
-        
-        // 如果有新标签，添加关联
-        if (tagIds && Array.isArray(tagIds) && tagIds.length > 0) {
-          const values = tagIds.map(tagId => `(${id}, ${tagId})`).join(',');
-          db.run(`INSERT INTO card_tags (card_id, tag_id) VALUES ${values}`, (err) => {
-            if (err) return res.status(500).json({error: err.message});
-            finishUpdate();
-          });
-        } else {
-          finishUpdate();
-        }
+        triggerDebouncedBackup(clientId, { type: 'cards_updated' }); // 触发自动备份和SSE广播
+        res.json({ 
+          success: true,
+          changed: changes,
+          card: card
+        });
       });
     }
   );
@@ -667,32 +569,24 @@ router.delete('/:id', auth, (req, res) => {
         return res.status(500).json({ error: err.message });
       }
       
-      // 先删除关联的标签
-      db.run('DELETE FROM card_tags WHERE card_id=?', [cardId], (err) => {
+      // 删除卡片
+      db.run('DELETE FROM cards WHERE id=?', [cardId], function(err) {
         if (err) {
           db.run('ROLLBACK');
-          return res.status(500).json({ error: '删除标签关联失败: ' + err.message });
+          return res.status(500).json({ error: '删除卡片失败: ' + err.message });
         }
         
-        // 再删除卡片
-        db.run('DELETE FROM cards WHERE id=?', [cardId], function(err) {
+        const deletedCount = this.changes;
+        
+        db.run('COMMIT', (err) => {
           if (err) {
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: '删除卡片失败: ' + err.message });
+            return res.status(500).json({ error: '提交事务失败: ' + err.message });
           }
           
-          const deletedCount = this.changes;
-          
-          db.run('COMMIT', (err) => {
-            if (err) {
-              return res.status(500).json({ error: '提交事务失败: ' + err.message });
-            }
-            
-            triggerDebouncedBackup(clientId, { type: 'cards_updated' }); // 触发自动备份和SSE广播
-            res.json({ 
-              success: true,
-              deleted: deletedCount
-            });
+          triggerDebouncedBackup(clientId, { type: 'cards_updated' }); // 触发自动备份和SSE广播
+          res.json({ 
+            success: true,
+            deleted: deletedCount
           });
         });
       });

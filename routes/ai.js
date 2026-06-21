@@ -18,15 +18,14 @@ const EventEmitter = require('events');
  * 核心生成函数：处理单个卡片的指定字段
  * @param {Object} config AI 配置
  * @param {Object} card 卡片对象
- * @param {Array} types 需要生成的字段类型 ['name', 'description', 'tags']
- * @param {Array} existingTags 现有标签列表
+ * @param {Array} types 需要生成的字段类型 ['name', 'description']
  * @param {Object} strategy 生成策略 { mode: 'fill'|'overwrite', style: 'default'|..., customPrompt: '' }
  * @returns {Promise<Object>} 处理结果 { updated: boolean, data: Object, error?: string }
  */
-async function generateCardFields(config, card, types, existingTags, strategy = {}) {
+async function generateCardFields(config, card, types, strategy = {}) {
   let updated = false;
   const isFillMode = strategy.mode !== 'overwrite';
-  const resultData = { name: null, description: null, tags: null };
+  const resultData = { name: null, description: null };
   const unchanged = {}; // 记录哪些字段生成成功但与原值相同
   const fieldErrors = []; // 记录各字段的错误
 
@@ -38,7 +37,7 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
     if (type === 'description') {
       return !(isFillMode && !checkIsDirtyDesc(card.desc, card.title, card.url));
     }
-    return true; // tags 总是可以补充
+    return true;
   });
 
   if (neededTypes.length === 0) return { updated: false, data: resultData };
@@ -54,9 +53,9 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
   // 2. 尝试使用统一 Prompt 处理多字段（效率更高）
   if (neededTypes.length > 1) {
     try {
-      const prompt = buildPromptWithStrategy(buildUnifiedPrompt(card, neededTypes, existingTags, metadata), strategy);
+      const prompt = buildPromptWithStrategy(buildUnifiedPrompt(card, neededTypes, metadata), strategy);
       const aiResponse = await callAI(config, prompt);
-      const parsed = parseUnifiedResponse(aiResponse, neededTypes, existingTags);
+      const parsed = parseUnifiedResponse(aiResponse, neededTypes);
 
       if (parsed.name && parsed.name !== card.title) {
         await db.updateCardName(card.id, parsed.name);
@@ -68,12 +67,6 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
         await db.updateCardDescription(card.id, parsed.description);
         resultData.description = parsed.description;
         card.desc = parsed.description;
-        updated = true;
-      }
-      if (parsed.tags && (parsed.tags.tags.length > 0 || parsed.tags.newTags.length > 0)) {
-        const allTags = [...parsed.tags.tags, ...parsed.tags.newTags];
-        await db.updateCardTags(card.id, allTags);
-        resultData.tags = parsed.tags; // 保持 { tags: [], newTags: [] } 格式
         updated = true;
       }
       return { updated, data: resultData };
@@ -118,18 +111,7 @@ async function generateCardFields(config, card, types, existingTags, strategy = 
             unchanged.description = true;
             resultData.description = cleaned;
           }
-        } else if (type === 'tags') {
-        prompt = buildPromptWithStrategy(buildTagsPrompt(card, existingTags, metadata), strategy);
-        aiResponse = await callAI(config, prompt);
-        const { tags, newTags } = parseTagsResponse(aiResponse, existingTags);
-        const allTags = [...tags, ...newTags];
-        if (allTags.length > 0) {
-          await db.updateCardTags(card.id, allTags);
-          // 返回分离的 tags 和 newTags，而不是合并后的数组
-          resultData.tags = { tags, newTags };
-          updated = true;
         }
-      }
     } catch (e) {
       console.error(`Failed to generate field ${type} for card ${card.id}:`, e.message);
       fieldErrors.push({ field: type, error: e.message });
@@ -273,12 +255,11 @@ class BatchTaskManager extends EventEmitter {
     const strategy = this.task?.strategy || {};
     
     try {
-      const existingTags = types.includes('tags') ? await db.getAllTagNames() : [];
       const rawConfig = await db.getAIConfig();
       const baseDelay = Math.max(500, Math.min(10000, parseInt(rawConfig.requestDelay) || 1500));
 
       // 第一轮：处理所有卡片
-      await this.processBatch(config, cards, types, existingTags, strategy, baseDelay);
+      await this.processBatch(config, cards, types, strategy, baseDelay);
 
       // 自动重试轮次：处理限流失败的卡片
       while (
@@ -313,7 +294,7 @@ class BatchTaskManager extends EventEmitter {
         // 重试的卡片失败计数减少
         this.task.failCount = Math.max(0, this.task.failCount - retryCards.length);
         
-        await this.processBatch(config, retryCards, types, existingTags, strategy, baseDelay * 2);
+        await this.processBatch(config, retryCards, types, strategy, baseDelay * 2);
       }
 
     } catch (err) {
@@ -339,7 +320,7 @@ class BatchTaskManager extends EventEmitter {
   }
 
   // 处理一批卡片
-  async processBatch(config, cards, types, existingTags, strategy, baseDelay) {
+  async processBatch(config, cards, types, strategy, baseDelay) {
     const { notifyDataChange } = require('../utils/autoBackup');
     let index = 0;
     const totalCards = cards.length;
@@ -356,7 +337,7 @@ class BatchTaskManager extends EventEmitter {
       this.emitUpdate();
 
       const results = await Promise.allSettled(
-        batch.map(card => this.processCardWithRetry(config, card, types, existingTags, strategy))
+        batch.map(card => this.processCardWithRetry(config, card, types, strategy))
       );
 
       let batchSuccess = 0;
@@ -487,11 +468,11 @@ class BatchTaskManager extends EventEmitter {
   }
 
   // 带重试的卡片处理
-  async processCardWithRetry(config, card, types, existingTags, strategy = {}, retryCount = 0) {
+  async processCardWithRetry(config, card, types, strategy = {}, retryCount = 0) {
     const maxRetries = 2;
     
     try {
-      const result = await generateCardFields(config, card, types, existingTags, strategy);
+      const result = await generateCardFields(config, card, types, strategy);
       // 部分成功也算成功，但记录警告
       return { 
         success: true, 
@@ -506,7 +487,7 @@ class BatchTaskManager extends EventEmitter {
         // 限流错误，等待后重试
         const retryDelay = Math.pow(2, retryCount + 1) * 1000; // 2s, 4s
         await this.sleep(retryDelay);
-        return this.processCardWithRetry(config, card, types, existingTags, strategy, retryCount + 1);
+        return this.processCardWithRetry(config, card, types, strategy, retryCount + 1);
       }
       
       return { 
@@ -1013,15 +994,11 @@ function getPageTypeDescription(analysis) {
 
 // ==================== Prompt 构建函数 ====================
 
-function buildUnifiedPrompt(card, types, existingTags, metadata = null) {
+function buildUnifiedPrompt(card, types, metadata = null) {
   const domain = extractDomain(card.url);
   const analysis = analyzePageType(card.url, card.title);
   const pageTypeDesc = getPageTypeDescription(analysis);
   const keyInfo = extractKeyInfo(metadata);
-
-  const tagsStr = existingTags.length > 0
-    ? existingTags.slice(0, 30).join('、')
-    : '暂无';
 
   const currentName = card.title && !card.title.includes('://') && !card.title.startsWith('www.')
     ? card.title : '';
@@ -1037,7 +1014,6 @@ function buildUnifiedPrompt(card, types, existingTags, metadata = null) {
   if (analysis.brand) contextInfo += `\n【品牌识别】${analysis.brand}`;
   if (keyInfo?.siteName && keyInfo.siteName !== analysis.brand && keyInfo.siteName !== keyInfo.brandName) contextInfo += ` (${keyInfo.siteName})`;
   if (analysis.hints.length > 0) contextInfo += `\n【分析提示】${analysis.hints.join('; ')}`;
-  contextInfo += `\n【现有标签库】${tagsStr}`;
 
   const messages = [
     {
@@ -1065,50 +1041,44 @@ function buildUnifiedPrompt(card, types, existingTags, metadata = null) {
 - 禁止使用的空泛表述："全球领先的..."（除非确实 TOP3）、"一站式...平台"、"致力于..."、"专注于..."、"专业的...服务"、"这是一个"、"本网站"
 - 应使用具体描述：说明核心功能、用户价值、差异化定位
 
-### 3. 标签 (tags) 生成规则
-- 推荐 2-3 个标签，覆盖不同维度：1 个领域标签 + 1 个功能标签 + 0-1 个补充标签
-- 优先从"现有标签库"中精确匹配，语义近似的标签必须复用而非新建
-${existingTags.length >= 40 ? '- ⚠️ 标签库已满，严禁创建新标签，newTags 必须为空数组 []\n' : ''}- 仅当现有标签完全无法覆盖时才创建新标签（最多 1 个），且新标签需 2-4 个中文字、通用性强
-- 新标签必须是名词短语，2-4 字，具有通用性（至少 5 个网站可用）
-
 ## 重要提示
 - 如果有【网站自述】，优先基于它来提炼描述，比凭空推断更准确
 - 如果信息不足，基于 URL 和域名做合理推断，不要输出"无法确定"类内容
 - 必须输出纯 JSON 对象，严禁包含思考过程、解释说明或 Markdown 标记
-- 输出格式：{"name":"名称","description":"描述","tags":["标签1","标签2"]}`
+- 输出格式：{"name":"名称","description":"描述"}`
     },
     // Few-shot 示例：使用结构化格式，覆盖多种场景
     // 1. 代码托管平台首页（有元数据）
-    { role: 'user', content: '【网站URL】https://github.com/\n【原始标题】GitHub: Let\'s build from here · GitHub\n【品牌名】GitHub\n【网站自述】GitHub is where over 100 million developers shape the future of software, together.\n【页面类型】网站首页\n【品牌识别】GitHub\n【现有标签库】开发工具、代码托管、开源、AI' },
-    { role: 'assistant', content: '{"name":"GitHub","description":"全球最大的代码托管与开源协作开发平台","tags":["开发工具","代码托管"]}' },
+    { role: 'user', content: '【网站URL】https://github.com/\n【原始标题】GitHub: Let\'s build from here · GitHub\n【品牌名】GitHub\n【网站自述】GitHub is where over 100 million developers shape the future of software, together.\n【页面类型】网站首页\n【品牌识别】GitHub' },
+    { role: 'assistant', content: '{"name":"GitHub","description":"全球最大的代码托管与开源协作开发平台"}' },
 
     // 2. 技术文档页（有元数据）
-    { role: 'user', content: '【网站URL】https://vuejs.org/guide/introduction.html\n【原始标题】Introduction | Vue.js\n【品牌名】Vue.js\n【网站自述】Vue.js - The Progressive JavaScript Framework\n【页面标题】Introduction\n【页面类型】文档/教程\n【品牌识别】Vue\n【现有标签库】前端框架、JavaScript、文档' },
-    { role: 'assistant', content: '{"name":"Vue 入门指南","description":"Vue.js 框架核心概念与基础使用方法详解","tags":["前端框架","JavaScript","文档"]}' },
+    { role: 'user', content: '【网站URL】https://vuejs.org/guide/introduction.html\n【原始标题】Introduction | Vue.js\n【品牌名】Vue.js\n【网站自述】Vue.js - The Progressive JavaScript Framework\n【页面标题】Introduction\n【页面类型】文档/教程\n【品牌识别】Vue' },
+    { role: 'assistant', content: '{"name":"Vue 入门指南","description":"Vue.js 框架核心概念与基础使用方法详解"}' },
 
     // 3. 登录/认证页面（有元数据，需忽略登录行为）
-    { role: 'user', content: '【网站URL】https://auth.example.com/login?redirect=/dashboard\n【原始标题】Sign In - Example Platform\n【品牌名】Example Platform\n【页面类型】登录/认证\n【品牌识别】Example\n【分析提示】URL 参数表明这是登录/认证流程页面\n【现有标签库】SaaS、效率工具' },
-    { role: 'assistant', content: '{"name":"Example Platform","description":"企业级协作与项目管理平台","tags":["SaaS","效率工具"]}' },
+    { role: 'user', content: '【网站URL】https://auth.example.com/login?redirect=/dashboard\n【原始标题】Sign In - Example Platform\n【品牌名】Example Platform\n【页面类型】登录/认证\n【品牌识别】Example\n【分析提示】URL 参数表明这是登录/认证流程页面' },
+    { role: 'assistant', content: '{"name":"Example Platform","description":"企业级协作与项目管理平台"}' },
 
     // 4. 在线工具（有元数据）
-    { role: 'user', content: '【网站URL】https://tinypng.com/\n【原始标题】TinyPNG – Compress WebP, PNG and JPEG images intelligently\n【品牌名】TinyPNG\n【网站自述】Optimize your images with a perfect balance of quality and file size.\n【页面类型】在线工具\n【品牌识别】TinyPNG\n【现有标签库】图片工具、压缩、设计' },
-    { role: 'assistant', content: '{"name":"TinyPNG","description":"智能压缩 PNG/JPEG/WebP 图片，最高减少 80% 体积","tags":["图片工具","压缩"]}' },
+    { role: 'user', content: '【网站URL】https://tinypng.com/\n【原始标题】TinyPNG – Compress WebP, PNG and JPEG images intelligently\n【品牌名】TinyPNG\n【网站自述】Optimize your images with a perfect balance of quality and file size.\n【页面类型】在线工具\n【品牌识别】TinyPNG' },
+    { role: 'assistant', content: '{"name":"TinyPNG","description":"智能压缩 PNG/JPEG/WebP 图片，最高减少 80% 体积"}' },
 
     // 5. 问答社区
-    { role: 'user', content: '【网站URL】https://www.zhihu.com/question/12345678\n【原始标题】如何学习编程？ - 知乎\n【页面类型】问答社区\n【品牌识别】知乎\n【现有标签库】问答、知识、社区' },
-    { role: 'assistant', content: '{"name":"知乎","description":"中文互联网高质量问答社区与知识分享平台","tags":["问答","知识","社区"]}' },
+    { role: 'user', content: '【网站URL】https://www.zhihu.com/question/12345678\n【原始标题】如何学习编程？ - 知乎\n【页面类型】问答社区\n【品牌识别】知乎' },
+    { role: 'assistant', content: '{"name":"知乎","description":"中文互联网高质量问答社区与知识分享平台"}' },
 
     // 6. AI 产品
-    { role: 'user', content: '【网站URL】https://chat.openai.com/\n【原始标题】ChatGPT\n【品牌名】ChatGPT\n【网站自述】ChatGPT helps you get answers, find inspiration and be more productive.\n【页面类型】AI/人工智能\n【品牌识别】ChatGPT\n【现有标签库】AI、聊天机器人、效率工具' },
-    { role: 'assistant', content: '{"name":"ChatGPT","description":"OpenAI 开发的智能对话助手，支持问答、写作与编程","tags":["AI","聊天机器人"]}' },
+    { role: 'user', content: '【网站URL】https://chat.openai.com/\n【原始标题】ChatGPT\n【品牌名】ChatGPT\n【网站自述】ChatGPT helps you get answers, find inspiration and be more productive.\n【页面类型】AI/人工智能\n【品牌识别】ChatGPT' },
+    { role: 'assistant', content: '{"name":"ChatGPT","description":"OpenAI 开发的智能对话助手，支持问答、写作与编程"}' },
 
     // 7. 个人博客（信息匮乏场景）
-    { role: 'user', content: '【网站URL】https://overreacted.io/a-complete-guide-to-useeffect/\n【原始标题】A Complete Guide to useEffect — overreacted\n【页面类型】博客/文章\n【品牌识别】overreacted\n【现有标签库】React、前端、博客' },
-    { role: 'assistant', content: '{"name":"useEffect 完全指南","description":"Dan Abramov 深入讲解 React useEffect 的工作原理","tags":["React","前端","博客"]}' },
+    { role: 'user', content: '【网站URL】https://overreacted.io/a-complete-guide-to-useeffect/\n【原始标题】A Complete Guide to useEffect — overreacted\n【页面类型】博客/文章\n【品牌识别】overreacted' },
+    { role: 'assistant', content: '{"name":"useEffect 完全指南","description":"Dan Abramov 深入讲解 React useEffect 的工作原理"}' },
 
     // 8. 信息极度匮乏场景
-    { role: 'user', content: '【网站URL】https://example-tool.com/\n【原始标题】无\n【页面类型】网站首页\n【品牌识别】Example Tool\n【现有标签库】暂无' },
-    { role: 'assistant', content: '{"name":"Example Tool","description":"Example Tool 官方网站与产品平台","tags":["工具","网站"]}' },
+    { role: 'user', content: '【网站URL】https://example-tool.com/\n【原始标题】无\n【页面类型】网站首页\n【品牌识别】Example Tool' },
+    { role: 'assistant', content: '{"name":"Example Tool","description":"Example Tool 官方网站与产品平台"}' },
 
     // 实际请求
     { role: 'user', content: contextInfo }
@@ -1272,182 +1242,19 @@ function buildDescriptionPrompt(card, metadata = null) {
   ];
 }
 
-function buildTagsPrompt(card, existingTags, metadata = null) {
-  const domain = extractDomain(card.url);
-  const analysis = analyzePageType(card.url, card.title);
-  const pageTypeDesc = getPageTypeDescription(analysis);
-  const keyInfo = extractKeyInfo(metadata);
-
-  // 智能标签筛选：根据页面类型关键词过滤最相关的标签子集（而非简单截取前 50 个）
-  const relevantTags = filterRelevantTags(existingTags, analysis.category, analysis.type, 30);
-  const tagsStr = relevantTags.length > 0
-    ? relevantTags.join('、')
-    : (existingTags.length > 0 ? existingTags.slice(0, 30).join('、') : '暂无');
-
-  const commonRules = '\n\n## 强制要求\n- 严禁输出任何思考过程、解释或反问\n- 严禁输出"请提供"、"如果您能"、"我需要"等请求信息的内容\n- 必须直接输出 JSON 格式，不要任何前缀或后缀\n- 即使信息有限，也必须基于已有信息做出合理推断并输出结果';
-
-  // 构建结构化上下文
-  let contextStr = `网站名称：${card.title || domain}\n网站描述：${card.desc || '暂无'}`;
-  if (keyInfo?.bestDescription) contextStr += `\n网站自述：${keyInfo.bestDescription}`;
-  if (keyInfo?.keywords) contextStr += `\n关键词：${keyInfo.keywords}`;
-  contextStr += `\n页面类型：${pageTypeDesc}`;
-  if (analysis.category) contextStr += `\n页面分类：${analysis.category}`;
-  contextStr += `\n现有标签库：${tagsStr}\n输出JSON：`;
-
-  return [
-    {
-      role: 'system',
-      content: `你是一个专业的互联网资源分类专家。你的任务是根据网站信息分配合适的分类标签。
-
-## 任务
-为网站分配 2-3 个最合适的分类标签。
-
-## 标签选择优先级
-1. **优先精确匹配**：从"现有标签库"中选择最贴切的标签
-2. **语义近似匹配**：如果现有标签有近义词（如"AI"与"人工智能"、"工具"与"在线工具"），必须复用现有标签而非创建新标签
-3. **补充新标签**：仅当现有标签完全无法覆盖时，才创建新标签（最多 1 个）
-${existingTags.length >= 40 ? '\n## ⚠️ 标签库已满（超过 40 个），严禁创建新标签，newTags 必须为空数组 []\n' : ''}
-## 标签层级建议
-每个网站优先覆盖不同维度的标签：
-- 1 个**领域标签**：说明属于什么大类（如：开发工具、设计工具、AI工具、效率工具、学习资源、社交娱乐、云服务）
-- 1 个**功能标签**：说明具体功能（如：代码托管、图片压缩、文档、数据库、版本控制）
-- 0-1 个**补充标签**：额外特征（如：开源、免费、协作、国产）
-
-## 按页面类型选择标签
-
-### 代码/开发类
-- 优先匹配：开发工具、代码托管、开源、编程
-- 常用新标签：版本控制、CI/CD、DevOps
-
-### 文档/教程类
-- 优先匹配：文档、教程、指南、学习
-- 必须包含 "文档" 或 "教程" 标签
-
-### 工具/效率类
-- 优先匹配：在线工具、效率工具、工具
-- 按功能细分：图片工具、格式转换、数据处理
-
-### AI/人工智能类
-- 优先匹配：AI、人工智能、大模型
-- 常用新标签：对话AI、图像生成、AI助手
-
-### 电商/购物类
-- 优先匹配：电商、购物、网购
-
-### 社交/社区类
-- 优先匹配：社交、社区、论坛
-- 按类型细分：问答、技术社区、创作者
-
-### 设计/创意类
-- 优先匹配：设计、UI、创意、素材
-
-## 新标签规范（最多 1 个）
-- 长度：2-4 个中文字符
-- 必须是名词或名词短语（不是动词或句子）
-- 描述类别/功能，而非具体产品名
-- 通用性检验：至少能被 5 个以上网站使用
-- ❌ 错误："tinypng图片压缩"（太具体）、"在线使用"（太泛）、"AI对话"（与已有"AI"重复）
-- ✅ 正确："图片工具"、"图片压缩"
-
-## 输出格式
-{"tags":["现有标签1","现有标签2"],"newTags":["新标签1"]}${commonRules}`
-    },
-    // Few-shot 示例
-    { role: 'user', content: '网站名称：GitHub\n网站描述：全球最大的代码托管平台\n页面类型：代码托管\n页面分类：code\n现有标签库：开发工具、代码托管、开源、设计、AI、效率工具\n输出JSON：' },
-    { role: 'assistant', content: '{"tags":["开发工具","代码托管","开源"],"newTags":[]}' },
-    { role: 'user', content: '网站名称：Midjourney\n网站描述：AI 图像生成工具\n网站自述：Create beautiful artwork in seconds with AI.\n页面类型：AI/人工智能\n页面分类：ai\n现有标签库：AI、设计、效率工具\n输出JSON：' },
-    { role: 'assistant', content: '{"tags":["AI","设计"],"newTags":["图像生成"]}' },
-    { role: 'user', content: '网站名称：淘宝\n网站描述：综合性电商平台\n页面类型：电子商务\n页面分类：ecommerce\n现有标签库：购物、工具、AI\n输出JSON：' },
-    { role: 'assistant', content: '{"tags":["购物"],"newTags":["电商"]}' },
-    { role: 'user', content: '网站名称：Example\n网站描述：暂无\n页面类型：网站首页\n现有标签库：工具、资源、网站\n输出JSON：' },
-    { role: 'assistant', content: '{"tags":["网站","资源"],"newTags":[]}' },
-    // 实际请求
-    {
-      role: 'user',
-      content: contextStr
-    }
-  ];
-}
-
-/**
- * 智能标签筛选：根据页面类型从现有标签中过滤出最相关的子集
- * @param {string[]} existingTags 所有现有标签
- * @param {string} category 页面分类（如 code, docs, ai 等）
- * @param {string} type 页面类型（如 homepage, subpage 等）
- * @param {number} maxCount 最大返回数量
- * @returns {string[]} 筛选后的相关标签
- */
-function filterRelevantTags(existingTags, category, type, maxCount = 30) {
-  if (!existingTags || existingTags.length === 0) return [];
-  if (existingTags.length <= maxCount) return existingTags;
-
-  // 按分类定义关键词映射
-  const categoryKeywords = {
-    code: ['开发', '代码', '编程', '开源', 'GitHub', 'Git', '版本', 'IDE', '框架', '库', 'API', '测试', '部署'],
-    docs: ['文档', '教程', '指南', '学习', '手册', '入门', '教程'],
-    ai: ['AI', '人工智能', '机器', '大模型', '深度学习', '神经网络', '智能'],
-    tool: ['工具', '效率', '在线', '转换', '处理', '生成', '计算', '格式化'],
-    design: ['设计', 'UI', 'UX', '创意', '素材', '图标', '配色', '原型'],
-    deploy: ['部署', '托管', '云服务', 'CDN', '服务器', '容器'],
-    database: ['数据库', '存储', '数据', 'SQL', '缓存'],
-    productivity: ['效率', '协作', '办公', '管理', '项目', '任务', '笔记'],
-    social: ['社交', '社区', '论坛', '聊天', '分享'],
-    video: ['视频', '直播', '影音', '播放'],
-    ecommerce: ['电商', '购物', '商城', '商品'],
-    blog: ['博客', '文章', '专栏', '写作'],
-    qa: ['问答', '知识', '问答社区'],
-    'tech-blog': ['技术', '开发', '前端', '后端', '编程'],
-    'tech-qa': ['技术', '开发', '编程', '代码'],
-    communication: ['通讯', '聊天', '协作', '会议'],
-    package: ['包管理', '依赖', '库', '组件'],
-    cloud: ['云', '云服务', '计算', '存储'],
-    network: ['网络', 'CDN', '安全', '加速']
-  };
-
-  const keywords = categoryKeywords[category] || [];
-  if (keywords.length === 0) return existingTags.slice(0, maxCount);
-
-  // 打分：匹配关键词的标签排前面
-  const scored = existingTags.map(tag => {
-    const lowerTag = tag.toLowerCase();
-    let score = 0;
-    for (const kw of keywords) {
-      if (lowerTag.includes(kw.toLowerCase())) {
-        score += 10;
-      }
-    }
-    // 通用标签（如"工具"、"资源"）给较低分
-    if (/^(工具|资源|网站|平台|服务|其他)$/.test(tag)) {
-      score += 2;
-    }
-    return { tag, score };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, maxCount).map(s => s.tag);
-}
-
-function parseUnifiedResponse(text, types, existingTags) {
-  const result = { name: '', description: '', tags: { tags: [], newTags: [] } };
+function parseUnifiedResponse(text, types) {
+  const result = { name: '', description: '' };
   if (!text) return result;
 
   try {
     // 增强的 JSON 提取逻辑
     const cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-    
+
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
       if (types.includes('name') && parsed.name) result.name = cleanName(parsed.name);
       if (types.includes('description') && parsed.description) result.description = cleanDescription(parsed.description);
-      if (types.includes('tags') && Array.isArray(parsed.tags)) {
-        const filteredTags = parsed.tags.filter(t => typeof t === 'string' && t.length > 0 && t.length <= 15);
-        // 分离现有标签和新标签
-        const existingSet = new Set(existingTags.map(t => t.toLowerCase()));
-        const matchedTags = filteredTags.filter(t => existingSet.has(t.toLowerCase()));
-        const newTagsList = filteredTags.filter(t => !existingSet.has(t.toLowerCase()));
-        result.tags = { tags: matchedTags, newTags: newTagsList };
-      }
       return result;
     }
   } catch (e) {
@@ -1615,46 +1422,6 @@ function cleanDescription(text) {
   return cleaned.length > 200 ? cleaned.substring(0, 200) + '...' : cleaned;
 }
 
-function parseTagsResponse(text, existingTags) {
-  if (!text) return { tags: [], newTags: [] };
-  
-  try {
-    const cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-    
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      const tags = Array.isArray(parsed.tags) 
-        ? parsed.tags.filter(t => typeof t === 'string' && t.length > 0 && t.length <= 15)
-        : [];
-      const newTags = Array.isArray(parsed.newTags) 
-        ? parsed.newTags.filter(t => typeof t === 'string' && t.length > 0 && t.length <= 10)
-        : [];
-      return { tags, newTags };
-    }
-  } catch {
-    // JSON 解析失败
-  }
-  
-  // 降级处理
-  const tagMatches = text.match(/["'「」『』""'']([^"'「」『』""'']+)["'「」『』""'']/g);
-  if (tagMatches?.length > 0) {
-    const tags = tagMatches
-      .map(t => t.replace(/["'「」『』""'']/g, '').trim())
-      .filter(t => t.length > 0 && t.length <= 15);
-    
-    const existingSet = new Set(existingTags.map(t => t.toLowerCase()));
-    const matchedTags = tags.filter(t => existingSet.has(t.toLowerCase()));
-    const newTagsList = tags.filter(t => !existingSet.has(t.toLowerCase()));
-    
-    return { 
-      tags: matchedTags.length > 0 ? matchedTags : tags.slice(0, 3), 
-      newTags: newTagsList.slice(0, 2) 
-    };
-  }
-  
-  return { tags: [], newTags: [] };
-}
 
 
 // ==================== API 路由 ====================
@@ -1853,10 +1620,9 @@ router.post('/test', authMiddleware, async (req, res) => {
 // 获取所有统计信息 (优化后的接口)
 router.get('/stats', authMiddleware, async (req, res) => {
   try {
-    const [nameCards, descCards, tagCards, allCards] = await Promise.all([
+    const [nameCards, descCards, allCards] = await Promise.all([
       db.getCardsNeedingAI('name'),
       db.getCardsNeedingAI('description'),
-      db.getCardsNeedingAI('tags'),
       db.getAllCards()
     ]);
     res.json({
@@ -1864,7 +1630,6 @@ router.get('/stats', authMiddleware, async (req, res) => {
       stats: {
         emptyName: nameCards.length,
         emptyDesc: descCards.length,
-        emptyTags: tagCards.length,
         total: allCards.length
       }
     });
@@ -1891,8 +1656,8 @@ router.get('/empty-cards', authMiddleware, async (req, res) => {
 // 高级筛选卡片
 router.post('/filter-cards', authMiddleware, async (req, res) => {
   try {
-    const { status = [], menuIds = [], subMenuIds = [], tagIds = [], excludeTagIds = [] } = req.body;
-    const cards = await db.filterCardsForAI({ status, menuIds, subMenuIds, tagIds, excludeTagIds });
+    const { status = [], menuIds = [], subMenuIds = [] } = req.body;
+    const cards = await db.filterCardsForAI({ status, menuIds, subMenuIds });
     res.json({ success: true, cards, total: cards.length });
   } catch (error) {
     res.status(500).json({ success: false, message: '筛选失败' });
@@ -1902,7 +1667,7 @@ router.post('/filter-cards', authMiddleware, async (req, res) => {
 // AI 预览生成（不保存，仅展示 AI 将生成的内容）
 router.post('/preview', authMiddleware, async (req, res) => {
   try {
-    const { cardIds, types = ['name', 'description', 'tags'], strategy = {} } = req.body;
+    const { cardIds, types = ['name', 'description'], strategy = {} } = req.body;
     if (!cardIds?.length) return res.status(400).json({ success: false, message: '请选择卡片' });
     
     const config = await getDecryptedAIConfig();
@@ -1910,7 +1675,6 @@ router.post('/preview', authMiddleware, async (req, res) => {
     if (!validation.valid) return res.status(400).json({ success: false, message: validation.message });
     
     const cards = await db.getCardsByIds(cardIds);
-    const existingTags = types.includes('tags') ? await db.getAllTagNames() : [];
 
     // 并行抓取所有卡片的元数据（减少总耗时，避免串行累积超时）
     const metadataResults = await Promise.allSettled(
@@ -1949,12 +1713,6 @@ router.post('/preview', authMiddleware, async (req, res) => {
             const aiResponse = await callAI(config, prompt);
             generated = cleanDescription(aiResponse);
             preview.fields.description = { original: card.desc || '', generated };
-          } else if (type === 'tags') {
-            const prompt = buildPromptWithStrategy(buildTagsPrompt(card, existingTags, previewMetadata), previewStrategy);
-            const aiResponse = await callAI(config, prompt);
-            const { tags, newTags } = parseTagsResponse(aiResponse, existingTags);
-            generated = [...tags, ...newTags];
-            preview.fields.tags = { original: [], generated };
           }
         } catch (e) {
           preview.fields[type] = { original: '', generated: '', error: e.message };
@@ -1971,15 +1729,15 @@ router.post('/preview', authMiddleware, async (req, res) => {
 // 单个卡片生成并保存
 router.post('/generate', authMiddleware, async (req, res) => {
   try {
-    const { type, card, existingTags } = req.body;
+    const { type, card } = req.body;
     if (!type || !card?.url) return res.status(400).json({ success: false, message: '参数不完整' });
     
     const config = await getDecryptedAIConfig();
     const validation = validateAIConfig(config);
     if (!validation.valid) return res.status(400).json({ success: false, message: validation.message });
     
-    const types = type === 'all' ? ['name', 'description', 'tags'] : type === 'both' ? ['name', 'description'] : [type];
-    const { updated, data, unchanged } = await generateCardFields(config, card, types, existingTags || [], { mode: 'overwrite' });
+    const types = type === 'all' ? ['name', 'description'] : type === 'both' ? ['name', 'description'] : [type];
+    const { updated, data, unchanged } = await generateCardFields(config, card, types, { mode: 'overwrite' });
     
     res.json({ success: true, ...data, unchanged });
   } catch (error) {
@@ -2027,10 +1785,10 @@ router.post('/batch-task/start', authMiddleware, async (req, res) => {
     
     if (cardIds?.length) {
       cards = await db.getCardsByIds(cardIds);
-      taskTypes = types || ['name', 'description', 'tags'];
+      taskTypes = types || ['name', 'description'];
       taskStrategy.mode = taskStrategy.mode || 'fill';
     } else if (type && mode) {
-      taskTypes = type === 'all' ? ['name', 'description', 'tags'] : [type];
+      taskTypes = type === 'all' ? ['name', 'description'] : [type];
       cards = mode === 'all' ? await db.getAllCards() : await db.getCardsNeedingAI(type === 'all' ? 'both' : type);
       taskStrategy.mode = mode === 'all' ? 'overwrite' : 'fill';
     } else {
@@ -2074,7 +1832,7 @@ async function autoGenerateForCards(cardIds) {
     const validation = validateAIConfig(config);
     if (!validation.valid) return;
     
-    const existingTags = await db.getAllTagNames();
+    // tags removed
     const delay = Math.max(500, parseInt(rawConfig.requestDelay) || 1500);
     let hasUpdates = false;
     
@@ -2096,53 +1854,24 @@ async function autoGenerateForCards(cardIds) {
       // - 只需要 tags: 单独生成 (~200 tokens)
       
       if (needsName && needsDesc) {
-        // 情况1: 需要name和desc，统一生成所有字段（最省token）
         try {
-          const { updated } = await generateCardFields(config, card, ['name', 'description', 'tags'], existingTags, { mode: 'fill' });
+          const { updated } = await generateCardFields(config, card, ['name', 'description'], { mode: 'fill' });
           if (updated) cardUpdated = true;
         } catch (e) {
-          console.warn(`Auto-generate failed for card ${card.id}, falling back:`, e.message);
-          // 失败时降级：先生成name+desc，再生成tags
-          try {
-            const { updated: updated1 } = await generateCardFields(config, card, ['name', 'description'], existingTags, { mode: 'fill' });
-            if (updated1) cardUpdated = true;
-            await new Promise(r => setTimeout(r, delay / 2));
-            const { updated: updated2 } = await generateCardFields(config, card, ['tags'], existingTags, { mode: 'fill' });
-            if (updated2) cardUpdated = true;
-          } catch (e2) {
-            console.warn(`Fallback generation also failed for card ${card.id}`);
-          }
+          console.warn(`Auto-generate failed for card ${card.id}:`, e.message);
         }
       } else if (needsName || needsDesc) {
-        // 情况2: 只需要name或desc其中之一，单独生成该字段
         const fieldType = needsName ? 'name' : 'description';
         try {
-          const { updated } = await generateCardFields(config, card, [fieldType], existingTags, { mode: 'overwrite' });
+          const { updated } = await generateCardFields(config, card, [fieldType], { mode: 'overwrite' });
           if (updated) cardUpdated = true;
-          await new Promise(r => setTimeout(r, delay / 2));
         } catch (e) {
           console.warn(`Auto-generate ${fieldType} failed for card ${card.id}:`, e.message);
         }
-        
-        // 然后生成tags
-        try {
-          const { updated } = await generateCardFields(config, card, ['tags'], existingTags, { mode: 'fill' });
-          if (updated) cardUpdated = true;
-        } catch (e) {
-          console.warn(`Auto-generate tags failed for card ${card.id}:`, e.message);
-        }
-      } else {
-        // 情况3: name和desc都有，只生成tags
-        try {
-          const { updated } = await generateCardFields(config, card, ['tags'], existingTags, { mode: 'fill' });
-          if (updated) cardUpdated = true;
-        } catch (e) {
-          console.warn(`Auto-generate tags failed for card ${card.id}:`, e.message);
-        }
       }
-      
+
       if (cardUpdated) hasUpdates = true;
-      
+
       // 卡片间延迟
       if (i < cardIds.length - 1) await new Promise(r => setTimeout(r, delay));
     }

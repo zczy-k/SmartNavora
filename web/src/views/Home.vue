@@ -117,14 +117,7 @@
               <path v-else d="M9 12l2 2 4-4"/>
             </svg>
           </button>
-          <button v-if="activeTags.length > 0" class="toolbar-icon-btn" :class="{ active: selectedTagIds.length > 0 }" @click="showTagPanel = !showTagPanel" title="标签筛选">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-              <line x1="7" y1="7" x2="7.01" y2="7"/>
-            </svg>
-            <span v-if="selectedTagIds.length > 0" class="toolbar-badge">{{ selectedTagIds.length }}</span>
-          </button>
-          
+
             <div class="global-sort-wrapper" @click.stop>
               <button class="toolbar-icon-btn" @click="toggleGlobalSortMenu" :title="'排序: ' + getSortLabel(globalSortType)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -155,50 +148,8 @@
         </div>
       </div>
 
-      <div v-if="selectedTagIds.length > 0" class="active-filters">
-        <span v-for="tagId in selectedTagIds" :key="tagId" class="filter-chip" :style="{ backgroundColor: getTagById(tagId)?.color }">
-          {{ getTagById(tagId)?.name }}
-          <button class="chip-close" @click="toggleTagFilter(tagId)">×</button>
-        </span>
-        <button v-if="selectedTagIds.length > 1" class="clear-filters-btn" @click="clearTagFilter">清除全部</button>
-      </div>
     </div>
     
-    <!-- 标签选择浮层 -->
-    <transition name="tag-panel">
-      <div v-if="showTagPanel" class="tag-panel-overlay" @click="showTagPanel = false">
-        <div class="tag-panel" @click.stop>
-          <div class="tag-panel-header">
-            <h4>选择标签 <span v-if="selectedTagIds.length > 0" class="selected-count">(已选 {{ selectedTagIds.length }})</span></h4>
-            <button class="panel-close-btn" @click="showTagPanel = false">×</button>
-          </div>
-          <div class="tag-panel-content">
-            <button
-              v-for="tag in activeTags"
-              :key="tag.id"
-              class="panel-tag-btn"
-              :class="{ active: isTagSelected(tag.id) }"
-              :style="{ 
-                backgroundColor: isTagSelected(tag.id) ? tag.color : 'rgba(255,255,255,0.9)',
-                color: isTagSelected(tag.id) ? 'white' : tag.color,
-                borderColor: tag.color
-              }"
-              @click="toggleTagFilter(tag.id)"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
-                <line x1="7" y1="7" x2="7.01" y2="7"/>
-              </svg>
-              {{ tag.name }}
-              <span v-if="isTagSelected(tag.id)" class="tag-check">✓</span>
-            </button>
-          </div>
-          <div v-if="selectedTagIds.length > 0" class="tag-panel-footer">
-            <button class="clear-all-btn" @click="clearTagFilter">清除全部</button>
-          </div>
-        </div>
-      </div>
-    </transition>
     
     <!-- 左侧宣传条 -->
     <div v-if="leftPromos.length" class="promo-space-fixed left-promo-fixed">
@@ -486,53 +437,6 @@
                       <label>描述：</label>
                       <textarea v-model="item.description" class="batch-edit-textarea" rows="2"></textarea>
                     </div>
-                    <div class="batch-edit-field" v-if="allTags.length > 0">
-                      <label>标签：</label>
-                      <div class="batch-tags-selector">
-                        <!-- 推荐标签区域 -->
-                        <div v-if="item.recommendedTagIds && item.recommendedTagIds.length > 0" class="recommended-tags-section">
-                          <div class="recommended-tags-header">
-                            <span class="recommend-badge">⭐ 智能推荐</span>
-                          </div>
-                          <div class="recommended-tags-list">
-                            <label 
-                              v-for="tagId in item.recommendedTagIds" 
-                              :key="'rec-' + tagId" 
-                              class="batch-tag-option recommended"
-                            >
-                              <input 
-                                type="checkbox" 
-                                :checked="item.tagIds && item.tagIds.includes(tagId)"
-                                @change="toggleBatchCardTag(item, tagId)"
-                              />
-                              <span class="batch-tag-label" :style="{ backgroundColor: getTagById(tagId)?.color }">
-                                {{ getTagById(tagId)?.name }}
-                              </span>
-                            </label>
-                          </div>
-                        </div>
-                        <!-- 其他标签区域 -->
-                        <div v-if="getOtherTags(item).length > 0" class="other-tags-section">
-                          <div class="other-tags-header">其他标签</div>
-                          <div class="other-tags-list">
-                            <label 
-                              v-for="tag in getOtherTags(item)" 
-                              :key="'other-' + tag.id" 
-                              class="batch-tag-option"
-                            >
-                              <input 
-                                type="checkbox" 
-                                :checked="item.tagIds && item.tagIds.includes(tag.id)"
-                                @change="toggleBatchCardTag(item, tag.id)"
-                              />
-                              <span class="batch-tag-label" :style="{ backgroundColor: tag.color }">
-                                {{ tag.name }}
-                              </span>
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
                     <p class="batch-card-url">{{ item.url }}</p>
                     <p v-if="!item.success" class="batch-card-warning">⚠️ {{ item.error }}</p>
                     <!-- 重复提示信息 -->
@@ -810,78 +714,6 @@
                 </button>
               </div>
             </div>
-            <div class="form-group">
-              <label>
-                标签
-                <button 
-                  @click="generateAITags" 
-                  class="ai-btn-inline" 
-                  :class="{ 'ai-btn-disabled': !aiConfigured }"
-                  :disabled="aiGeneratingTags || !aiConfigured"
-                  :title="aiConfigured ? 'AI 推荐标签' : '请先在后台配置 AI 服务'"
-                >
-                  {{ aiGeneratingTags ? '⏳' : '🏷️ AI推荐' }}
-                </button>
-              </label>
-              <div class="tag-select-area">
-                <div class="selected-tags">
-                  <span 
-                    v-for="tagId in cardEditForm.tagIds" 
-                    :key="tagId"
-                    class="selected-tag"
-                    :style="{ backgroundColor: getTagById(tagId)?.color || '#666' }"
-                  >
-                    {{ getTagById(tagId)?.name || '未知' }}
-                    <button @click="removeTag(tagId)" class="remove-tag-btn">×</button>
-                  </span>
-                </div>
-                <!-- 标签搜索框 -->
-                <div class="tag-search-row">
-                  <input 
-                    v-model="tagSearchQuery" 
-                    type="text" 
-                    placeholder="搜索标签..." 
-                    class="tag-search-input"
-                  />
-                  <button @click="showQuickAddTag = !showQuickAddTag" class="quick-add-tag-btn" :title="showQuickAddTag ? '取消' : '新建标签'">
-                    {{ showQuickAddTag ? '×' : '+ 新建' }}
-                  </button>
-                </div>
-                <!-- 快速新建标签 -->
-                <div v-if="showQuickAddTag" class="quick-add-tag-form">
-                  <input 
-                    v-model="quickTagName" 
-                    type="text" 
-                    placeholder="标签名称" 
-                    class="quick-tag-name-input"
-                    maxlength="20"
-                  />
-                  <input 
-                    v-model="quickTagColor" 
-                    type="color" 
-                    class="quick-tag-color-input"
-                    title="选择颜色"
-                  />
-                  <button @click="createQuickTag" class="quick-tag-create-btn" :disabled="!quickTagName.trim()">
-                    创建
-                  </button>
-                </div>
-                <div class="available-tags">
-                  <button 
-                    v-for="tag in filteredAvailableTags" 
-                    :key="tag.id"
-                    @click="addTag(tag.id)"
-                    class="available-tag-btn"
-                    :style="{ borderColor: tag.color, color: tag.color }"
-                  >
-                    + {{ tag.name }}
-                  </button>
-                  <span v-if="filteredAvailableTags.length === 0 && tagSearchQuery" class="no-tags-hint">
-                    未找到匹配的标签
-                  </span>
-                </div>
-              </div>
-            </div>
             <p v-if="editError" class="batch-error">{{ editError }}</p>
             <div class="batch-actions" style="margin-top: 20px;">
               <button @click="closeEditCardModal" class="btn btn-cancel">取消</button>
@@ -1043,7 +875,7 @@
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch } from 'vue';
-import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getTags, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, instance as apiInstance } from '../api';
+import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, instance as apiInstance } from '../api';
 
 // AI API 调用（使用 api.js 的 instance 以确保全局 401 拦截器生效）
 const api = {
@@ -1069,16 +901,8 @@ const searchQuery = ref('');
 const debouncedSearchQuery = ref('');
 let searchDebounceTimer = null;
 
-function filterCardsByActiveCriteria(cardList, keyword = debouncedSearchQuery.value.trim(), requireAllTags = false) {
+function filterCardsByActiveCriteria(cardList, keyword = debouncedSearchQuery.value.trim()) {
   let result = Array.isArray(cardList) ? [...cardList] : [];
-
-  if (selectedTagIds.value.length > 0) {
-    result = result.filter(card => {
-      if (!card.tags || card.tags.length === 0) return false;
-      const matcher = requireAllTags ? 'every' : 'some';
-      return selectedTagIds.value[matcher](tagId => card.tags.some(tag => tag.id === tagId));
-    });
-  }
 
   if (keyword) {
     result = filterCardsWithPinyin(result, keyword);
@@ -1235,8 +1059,7 @@ const cardEditForm = ref({
   title: '',
   url: '',
   logo_url: '',
-  desc: '',
-  tagIds: []
+  desc: ''
 });
 
 // 标签搜索和快速创建
@@ -2016,10 +1839,9 @@ let deferredDataTimer = null;
 let deferredSearchTimer = null;
 
 async function loadDeferredHomeData(cacheData) {
-  const [promosRes, friendsRes, tagsRes, enginesRes] = await Promise.allSettled([
+  const [promosRes, friendsRes, enginesRes] = await Promise.allSettled([
     getPromos(),
     getFriends(),
-    getTags(),
     getSearchEngines()
   ]);
 
@@ -2032,13 +1854,6 @@ async function loadDeferredHomeData(cacheData) {
   if (friendsRes.status === 'fulfilled') {
     friendLinks.value = friendsRes.value.data;
     cacheData.friends = friendsRes.value.data;
-  }
-
-  if (tagsRes.status === 'fulfilled') {
-    allTags.value = tagsRes.value.data;
-    cacheData.tags = tagsRes.value.data;
-  } else {
-    console.error('加载标签失败:', tagsRes.reason);
   }
 
   if (enginesRes.status === 'fulfilled') {
@@ -4326,8 +4141,7 @@ async function handleEditCard(card) {
     title: card.title || '',
     url: card.url || '',
     logo_url: card.logo_url || '',
-    desc: card.desc || '',
-    tagIds: card.tags ? card.tags.map(t => t.id) : []
+    desc: card.desc || ''
   };
   editError.value = '';
   showEditCardModal.value = true;
@@ -4627,8 +4441,7 @@ async function saveCardEdit() {
     title: cardEditForm.value.title,
     url: cardEditForm.value.url,
     logo_url: cardEditForm.value.logo_url,
-    desc: cardEditForm.value.desc,
-    tagIds: cardEditForm.value.tagIds
+    desc: cardEditForm.value.desc
   };
   
     try {

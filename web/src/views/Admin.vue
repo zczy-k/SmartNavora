@@ -41,7 +41,6 @@
         <li :class="{active: page==='card'}" @click="requestPageChange('card')">卡片治理</li>
         <li :class="{active: page==='duplicate'}" @click="requestPageChange('duplicate')">重复清理</li>
         <li :class="{active: page==='invalid'}" @click="requestPageChange('invalid')">失效链接治理</li>
-        <li :class="{active: page==='tag'}" @click="requestPageChange('tag')">标签治理</li>
         <li :class="{active: page==='promo'}" @click="requestPageChange('promo')">宣传位管理</li>
         <li :class="{active: page==='friend'}" @click="requestPageChange('friend')">友情链接管理</li>
         <li :class="{active: page==='user'}" @click="requestPageChange('user')">用户与权限</li>
@@ -82,7 +81,6 @@ import MenuManage from './admin/MenuManage.vue';
 import CardManage from './admin/CardManage.vue';
 import DuplicateManage from './admin/DuplicateManage.vue';
 import InvalidLinkManage from './admin/InvalidLinkManage.vue';
-import TagManage from './admin/TagManage.vue';
 import PromoManage from './admin/PromoManage.vue';
 import FriendLinkManage from './admin/FriendLinkManage.vue';
 import UserManage from './admin/UserManage.vue';
@@ -185,7 +183,6 @@ const componentMap = {
   card: CardManage,
   duplicate: DuplicateManage,
   invalid: InvalidLinkManage,
-  tag: TagManage,
   promo: PromoManage,
   friend: FriendLinkManage,
   user: UserManage,
@@ -226,7 +223,6 @@ const pageTitle = computed(() => {
       case 'card': return '卡片治理';
       case 'duplicate': return '重复清理';
       case 'invalid': return '失效链接治理';
-      case 'tag': return '标签治理';
       case 'promo': return '宣传位管理';
       case 'friend': return '友情链接管理';
       case 'user': return '用户与权限';

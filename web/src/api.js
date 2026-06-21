@@ -174,14 +174,6 @@ export const updateSearchEngine = (id, data) => instance.put(`/search-engines/${
 export const deleteSearchEngine = (id) => instance.delete(`/search-engines/${id}`);
 export const reorderSearchEngines = (engines) => instance.post(`/search-engines/reorder`, { engines });
 
-// 标签API
-export const getTags = () => instance.get(`/tags`);
-export const addTag = (data) => instance.post(`/tags`, data);
-export const updateTag = (id, data) => instance.put(`/tags/${id}`, data);
-export const deleteTag = (id) => instance.delete(`/tags/${id}`);
-export const getTagCardCount = (id) => instance.get(`/tags/${id}/cards/count`);
-export const cleanupTags = () => instance.delete(`/tags/cleanup`);
-
 // 卡片去重API
 export const detectDuplicates = () => instance.get(`/cards/detect-duplicates/all?_t=${Date.now()}`);
 export const removeDuplicates = (cardIds) => instance.post(`/cards/remove-duplicates`, { cardIds });

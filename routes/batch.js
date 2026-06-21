@@ -294,7 +294,7 @@ router.post('/add', auth, (req, res) => {
 
       // 逐个插入非重复卡片
       uniqueCards.forEach((card, index) => {
-        const { title, url, logo, description, tagIds } = card;
+        const { title, url, logo, description } = card;
         const order = nextOrder + index;
 
       db.run(
@@ -310,50 +310,23 @@ router.post('/add', auth, (req, res) => {
             const cardId = this.lastID;
             insertedIds.push(cardId);
             
-            // 如果有标签，关联标签
-            if (tagIds && Array.isArray(tagIds) && tagIds.length > 0) {
-              const values = tagIds.map(tagId => `(${cardId}, ${tagId})`).join(',');
-              db.run(`INSERT INTO card_tags (card_id, tag_id) VALUES ${values}`, (tagErr) => {
-                if (tagErr) {
-                  console.error('标签关联失败:', tagErr);
-                }
-              completed++;
-                  if (completed === uniqueCards.length) {
-                    triggerDebouncedBackup(clientId, { type: 'cards_updated' });
-                  
-                  // 异步触发 AI 自动生成（不阻塞响应）
-                  if (insertedIds.length > 0) {
-                    setImmediate(() => autoGenerateForCards(insertedIds));
-                  }
-                  
-                  res.json({ 
-                    success: true, 
-                    added: insertedIds.length,
-                    skipped: skippedCards.length,
-                    skippedCards: skippedCards,
-                    ids: insertedIds 
-                  });
-                }
-              });
-              } else {
-                completed++;
-                if (completed === uniqueCards.length) {
-                  triggerDebouncedBackup(clientId, { type: 'cards_updated' });
-                
-                // 异步触发 AI 自动生成（不阻塞响应）
-                if (insertedIds.length > 0) {
-                  setImmediate(() => autoGenerateForCards(insertedIds));
-                }
-                
-                res.json({ 
-                  success: true, 
-                  added: insertedIds.length,
-                  skipped: skippedCards.length,
-                  skippedCards: skippedCards,
-                  ids: insertedIds 
-                });
-              }
+            completed++;
+            if (completed === uniqueCards.length) {
+              triggerDebouncedBackup(clientId, { type: 'cards_updated' });
+            
+            // 异步触发 AI 自动生成（不阻塞响应）
+            if (insertedIds.length > 0) {
+              setImmediate(() => autoGenerateForCards(insertedIds));
             }
+            
+            res.json({ 
+              success: true, 
+              added: insertedIds.length,
+              skipped: skippedCards.length,
+              skippedCards: skippedCards,
+              ids: insertedIds 
+            });
+          }
           }
         }
       );

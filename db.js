@@ -387,9 +387,6 @@ async function seedDefaultData() {
       }
     }
 
-    // 预置标签分类
-    await seedTags();
-
     // 提交事务
     await dbRun('COMMIT');
   } catch (error) {
@@ -400,131 +397,9 @@ async function seedDefaultData() {
   }
 }
 
-// 预置标签分类
+// 预置标签分类（已禁用 - 标签功能已移除）
 async function seedTags() {
-  try {
-    const tagCount = await dbGet('SELECT COUNT(*) as count FROM tags');
-
-    if (tagCount && tagCount.count > 0) {
-      return;
-    }
-
-    // 预置标签
-    const DEFAULT_TAGS = [
-      { name: '搜索引擎', color: '#3b82f6', order: 1 },
-      { name: '视频', color: '#ef4444', order: 2 },
-      { name: '邮箱', color: '#10b981', order: 3 },
-      { name: '开发工具', color: '#8b5cf6', order: 4 },
-      { name: 'AI工具', color: '#f59e0b', order: 5 },
-      { name: '云服务', color: '#06b6d4', order: 6 },
-      { name: '社交媒体', color: '#ec4899', order: 7 },
-      { name: '工具', color: '#6366f1', order: 8 },
-      { name: '软件下载', color: '#14b8a6', order: 9 },
-      { name: '网络工具', color: '#f97316', order: 10 },
-      { name: '娱乐', color: '#a855f7', order: 11 },
-      { name: '社区', color: '#84cc16', order: 12 },
-      { name: '图片处理', color: '#22d3ee', order: 13 },
-      { name: '域名工具', color: '#fb923c', order: 14 }
-    ];
-
-    const tagMap = {};
-    for (const tag of DEFAULT_TAGS) {
-      const result = await dbRun(
-        'INSERT INTO tags (name, color, "order") VALUES (?, ?, ?)',
-        [tag.name, tag.color, tag.order]
-      );
-      tagMap[tag.name] = result.lastID;
-    }
-
-    // 为卡片分配标签
-    const CARD_TAG_RULES = [
-      { urlPattern: 'baidu.com', tags: ['搜索引擎'] },
-      { urlPattern: 'google.com', tags: ['搜索引擎', '邮箱'] },
-      { urlPattern: 'youtube.com', tags: ['视频', '社交媒体'] },
-      { urlPattern: 'music.eooce.com', tags: ['娱乐'] },
-      { urlPattern: 'libretv.eooce.com', tags: ['视频', '娱乐'] },
-      { urlPattern: 'github.com', tags: ['开发工具', '社区'] },
-      { urlPattern: 'hoppscotch.io', tags: ['开发工具', '工具'] },
-      { urlPattern: 'json.cn', tags: ['开发工具', '工具'] },
-      { urlPattern: 'obfuscator.io', tags: ['开发工具', '工具'] },
-      { urlPattern: 'freecodingtools.org', tags: ['开发工具', '工具'] },
-      { urlPattern: 'uiverse.io', tags: ['开发工具'] },
-      { urlPattern: 'igoutu.cn', tags: ['开发工具'] },
-      { urlPattern: 'chat.openai.com', tags: ['AI工具'] },
-      { urlPattern: 'deepseek.com', tags: ['AI工具'] },
-      { urlPattern: 'claude.ai', tags: ['AI工具'] },
-      { urlPattern: 'gemini.google.com', tags: ['AI工具'] },
-      { urlPattern: 'chat.qwenlm.ai', tags: ['AI工具'] },
-      { urlPattern: 'kimi.com', tags: ['AI工具'] },
-      { urlPattern: 'huggingface.co', tags: ['AI工具', '开发工具'] },
-      { urlPattern: 'cloudflare.com', tags: ['云服务', '网络工具'] },
-      { urlPattern: 'aliyun.com', tags: ['云服务'] },
-      { urlPattern: 'cloud.tencent.com', tags: ['云服务'] },
-      { urlPattern: 'cloud.oracle.com', tags: ['云服务'] },
-      { urlPattern: 'aws.amazon.com', tags: ['云服务'] },
-      { urlPattern: 'digitalocean.com', tags: ['云服务'] },
-      { urlPattern: 'vultr.com', tags: ['云服务'] },
-      { urlPattern: 'ip.sb', tags: ['网络工具', '工具'] },
-      { urlPattern: 'ping0.cc', tags: ['网络工具', '工具'] },
-      { urlPattern: 'itdog.cn', tags: ['网络工具', '工具'] },
-      { urlPattern: 'browserscan.net', tags: ['网络工具', '工具'] },
-      { urlPattern: 'ssss.nyc.mn', tags: ['网络工具', '工具'] },
-      { urlPattern: 'ssh.eooce.com', tags: ['网络工具', '工具'] },
-      { urlPattern: 'sublink.eooce.com', tags: ['网络工具', '工具'] },
-      { urlPattern: 'who.cx', tags: ['域名工具', '工具'] },
-      { urlPattern: 'whois.com', tags: ['域名工具', '工具'] },
-      { urlPattern: 'nodeseek.com', tags: ['社区'] },
-      { urlPattern: 'linux.do', tags: ['社区'] },
-      { urlPattern: 'mail.google.com', tags: ['邮箱'] },
-      { urlPattern: 'outlook.live.com', tags: ['邮箱'] },
-      { urlPattern: 'account.proton.me', tags: ['邮箱'] },
-      { urlPattern: 'mail.qq.com', tags: ['邮箱'] },
-      { urlPattern: 'mail.yahoo.com', tags: ['邮箱'] },
-      { urlPattern: 'linshiyouxiang.net', tags: ['邮箱', '工具'] },
-      { urlPattern: 'smsonline.cloud', tags: ['工具'] },
-      { urlPattern: 'hellowindows.cn', tags: ['软件下载'] },
-      { urlPattern: 'qijishow.com', tags: ['软件下载'] },
-      { urlPattern: 'ypojie.com', tags: ['软件下载'] },
-      { urlPattern: 'topcracked.com', tags: ['软件下载'] },
-      { urlPattern: 'macwk.com', tags: ['软件下载'] },
-      { urlPattern: 'mac.macsc.com', tags: ['软件下载'] },
-      { urlPattern: 'qqxiuzi.cn', tags: ['工具'] },
-      { urlPattern: 'cli.im', tags: ['工具'] },
-      { urlPattern: 'remove.photos', tags: ['图片处理', '工具'] },
-      { urlPattern: 'filebox.nnuu.nyc.mn', tags: ['工具'] },
-      { urlPattern: 'address.nnuu.nyc.mn', tags: ['工具'] }
-    ];
-
-    const cards = await dbAll('SELECT id, url FROM cards');
-    let assignCount = 0;
-
-    for (const card of cards) {
-      const matchedTags = new Set();
-
-      for (const rule of CARD_TAG_RULES) {
-        if (card.url.includes(rule.urlPattern)) {
-          rule.tags.forEach(tagName => {
-            if (tagMap[tagName]) {
-              matchedTags.add(tagMap[tagName]);
-            }
-          });
-        }
-      }
-
-      if (matchedTags.size > 0) {
-        for (const tagId of matchedTags) {
-          await dbRun(
-            'INSERT OR IGNORE INTO card_tags (card_id, tag_id) VALUES (?, ?)',
-            [card.id, tagId]
-          );
-        }
-        assignCount++;
-      }
-    }
-  } catch (error) {
-    console.error('✗ 预置标签失败:', error);
-    // 不阻断初始化流程
-  }
+  return;
 }
 
 // 执行初始化并导出 Promise
@@ -747,21 +622,17 @@ async function getCardsNeedingAI(type) {
   let sql = 'SELECT c.id, c.title, c.url, c.desc FROM cards c';
   const nameCond = "(c.title IS NULL OR c.title = '' OR c.title LIKE '%://%' OR c.title LIKE 'www.%')";
   const descCond = "(c.desc IS NULL OR c.desc = '')";
-  const tagsCond = "c.id NOT IN (SELECT DISTINCT card_id FROM card_tags)";
-  
+
   if (type === 'description') {
     sql += ` WHERE ${descCond}`;
-  } else if (type === 'tags') {
-    sql += ` WHERE ${tagsCond}`;
   } else if (type === 'name') {
     sql += ` WHERE ${nameCond}`;
   } else if (type === 'all') {
-    sql += ` WHERE ${nameCond} OR ${descCond} OR ${tagsCond}`;
+    sql += ` WHERE ${nameCond} OR ${descCond}`;
   } else {
-    // both - 缺少描述或标签的
-    sql += ` WHERE ${descCond} OR ${tagsCond}`;
+    sql += ` WHERE ${descCond}`;
   }
-  
+
   return await dbAll(sql);
 }
 
@@ -778,12 +649,6 @@ async function getCardsByIds(ids) {
     `SELECT id, title, url, desc FROM cards WHERE id IN (${placeholders})`,
     ids
   );
-}
-
-// 获取所有标签名称
-async function getAllTagNames() {
-  const rows = await dbAll('SELECT name FROM tags ORDER BY "order"');
-  return rows.map(r => r.name);
 }
 
 // 更新卡片描述
@@ -819,56 +684,12 @@ async function updateCardNameAndDescription(cardId, name, description) {
   }
 }
 
-// 更新卡片标签
-async function updateCardTags(cardId, tagNames) {
-  // 先删除现有标签关联
-  await dbRun('DELETE FROM card_tags WHERE card_id = ?', [cardId]);
-  
-  for (const tagName of tagNames) {
-    // 查找或创建标签
-    let tag = await dbGet('SELECT id FROM tags WHERE name = ?', [tagName]);
-    
-    if (!tag) {
-      // 创建新标签
-      const result = await dbRun(
-        'INSERT INTO tags (name, color) VALUES (?, ?)',
-        [tagName, getRandomColor()]
-      );
-      tag = { id: result.lastID };
-    }
-    
-    // 创建关联
-    await dbRun(
-      'INSERT OR IGNORE INTO card_tags (card_id, tag_id) VALUES (?, ?)',
-      [cardId, tag.id]
-    );
-  }
-  
-  await incrementDataVersion();
-}
-
-// 生成随机颜色
-function getRandomColor() {
-  const colors = [
-    '#3b82f6', '#ef4444', '#10b981', '#8b5cf6', '#f59e0b',
-    '#06b6d4', '#ec4899', '#6366f1', '#14b8a6', '#f97316'
-  ];
-  return colors[Math.floor(Math.random() * colors.length)];
-}
-
 // 高级筛选卡片（用于 AI 批量生成）
-async function filterCardsForAI({ status = [], menuIds = [], subMenuIds = [], tagIds = [], excludeTagIds = [] }) {
+async function filterCardsForAI({ status = [], menuIds = [], subMenuIds = [] }) {
   let sql = 'SELECT DISTINCT c.id, c.title, c.url, c.desc, c.menu_id, c.sub_menu_id FROM cards c';
   const conditions = [];
   const params = [];
-  
-  // 标签筛选需要 JOIN
-  if (tagIds.length > 0) {
-    sql += ' INNER JOIN card_tags ct ON c.id = ct.card_id';
-    conditions.push(`ct.tag_id IN (${tagIds.map(() => '?').join(',')})`);
-    params.push(...tagIds);
-  }
-  
+
   // 状态筛选
   const statusConditions = [];
   if (status.includes('empty_name')) {
@@ -877,29 +698,20 @@ async function filterCardsForAI({ status = [], menuIds = [], subMenuIds = [], ta
   if (status.includes('empty_desc')) {
     statusConditions.push("(c.desc IS NULL OR c.desc = '')");
   }
-  if (status.includes('empty_tags')) {
-    statusConditions.push("c.id NOT IN (SELECT DISTINCT card_id FROM card_tags)");
-  }
   if (statusConditions.length > 0) {
     conditions.push(`(${statusConditions.join(' OR ')})`);
   }
-  
+
   // 菜单筛选
   if (menuIds.length > 0) {
     conditions.push(`c.menu_id IN (${menuIds.map(() => '?').join(',')})`);
     params.push(...menuIds);
   }
-  
+
   // 子菜单筛选
   if (subMenuIds.length > 0) {
     conditions.push(`c.sub_menu_id IN (${subMenuIds.map(() => '?').join(',')})`);
     params.push(...subMenuIds);
-  }
-  
-  // 排除标签
-  if (excludeTagIds.length > 0) {
-    conditions.push(`c.id NOT IN (SELECT card_id FROM card_tags WHERE tag_id IN (${excludeTagIds.map(() => '?').join(',')}))`);
-    params.push(...excludeTagIds);
   }
   
   if (conditions.length > 0) {
@@ -935,11 +747,9 @@ const dbWrapper = {
   getCardsNeedingAI,
   getAllCards,
   getCardsByIds,
-  getAllTagNames,
   updateCardDescription,
   updateCardName,
   updateCardNameAndDescription,
-  updateCardTags,
   filterCardsForAI
 };
 
