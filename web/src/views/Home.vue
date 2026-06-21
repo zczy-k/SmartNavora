@@ -211,6 +211,12 @@
             </svg>
             <span>移动</span>
           </button>
+          <button @click="openBatchSectionModal" class="toolbar-btn section-btn" title="批量设置分组">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 6h16M4 12h10M4 18h14"></path>
+            </svg>
+            <span>分组</span>
+          </button>
           <button @click="batchDeleteSelected" class="toolbar-btn delete-btn" title="批量删除">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
@@ -414,7 +420,7 @@
             <p class="batch-tip">请选择需要添加的网站：</p>
             <div class="batch-section-bar">
               <label>统一分组：</label>
-              <input type="text" v-model="batchSection" class="batch-section-input" placeholder="为所有选中卡片设置同一分组（可选）" @change="applyBatchSection" />
+              <input type="text" v-model="batchSection" class="batch-section-input" placeholder="为所有选中卡片设置同一分组（可选）" list="section-datalist" @change="applyBatchSection" />
               <button v-if="batchSection" class="btn sm" @click="applyBatchSection">应用到全部</button>
             </div>
             <div class="batch-preview-list">
@@ -459,7 +465,7 @@
                     </div>
                     <div class="batch-edit-field">
                       <label>分组：</label>
-                      <input type="text" v-model="item.section" class="batch-edit-input" placeholder="可选，如：AI 工具、开发环境" />
+                      <input type="text" v-model="item.section" class="batch-edit-input" placeholder="可选，如：AI 工具、开发环境" list="section-datalist" />
                     </div>
                     <p class="batch-card-url">{{ item.url }}</p>
                     <p v-if="!item.success" class="batch-card-warning">⚠️ {{ item.error }}</p>
@@ -745,6 +751,7 @@
                 placeholder="例如：AI 工具、开发环境、数据库"
                 class="batch-input"
                 maxlength="30"
+                list="section-datalist"
               />
             </div>
             <p v-if="editError" class="batch-error">{{ editError }}</p>
@@ -781,13 +788,38 @@
           </div>
           <div class="form-group">
             <label>分组 <span class="field-hint">（可选，用于在子菜单内分类）</span></label>
-            <input v-model="quickAddForm.section" placeholder="例如：AI 工具、开发环境" class="batch-input" />
+            <input v-model="quickAddForm.section" placeholder="例如：AI 工具、开发环境" class="batch-input" list="section-datalist" />
           </div>
           <p v-if="quickAddError" class="batch-error">{{ quickAddError }}</p>
           <div class="batch-actions" style="margin-top: 16px;">
             <button @click="showQuickAddModal = false" class="btn btn-cancel">取消</button>
             <button @click="saveQuickAdd" class="btn btn-primary" :disabled="quickAddLoading">
               {{ quickAddLoading ? '添加中...' : '添加' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 批量设置分组弹窗 -->
+    <div v-if="showBatchSectionModal" class="modal-overlay" @click="showBatchSectionModal = false">
+      <div class="modal-content quick-add-modal" @click.stop>
+        <div class="modal-header">
+          <h3>批量设置分组</h3>
+          <button class="close-btn" @click="showBatchSectionModal = false">×</button>
+        </div>
+        <div class="modal-body">
+          <p style="color: rgba(255,255,255,0.6); font-size: 13px; margin-bottom: 12px;">
+            为已选的 <strong style="color: rgba(255,255,255,0.9);">{{ selectedCards.length }}</strong> 张卡片设置分组
+          </p>
+          <div class="form-group">
+            <label>分组名称</label>
+            <input v-model="batchSectionValue" placeholder="输入分组名，留空则清除分组" class="batch-input" list="section-datalist" @keyup.enter="applyBatchSectionToSelected" />
+          </div>
+          <div class="batch-actions" style="margin-top: 16px;">
+            <button @click="showBatchSectionModal = false" class="btn btn-cancel">取消</button>
+            <button @click="applyBatchSectionToSelected" class="btn btn-primary" :disabled="batchSectionLoading">
+              {{ batchSectionLoading ? '设置中...' : '应用' }}
             </button>
           </div>
         </div>
@@ -939,11 +971,16 @@
       </div>
     </div>
   </div>
+
+  <!-- 分组自动补全 -->
+  <datalist id="section-datalist">
+    <option v-for="s in sectionSuggestions" :key="s" :value="s">{{ s }}</option>
+  </datalist>
 </template>
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch } from 'vue';
-import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, instance as apiInstance } from '../api';
+import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, getCardSections, instance as apiInstance } from '../api';
 
 // AI API 调用（使用 api.js 的 instance 以确保全局 401 拦截器生效）
 const api = {
@@ -1080,6 +1117,65 @@ const showQuickAddModal = ref(false);
 const quickAddLoading = ref(false);
 const quickAddError = ref('');
 const quickAddForm = ref({ url: '', title: '', desc: '', section: '' });
+const sectionSuggestions = ref([]);
+
+async function loadSectionSuggestions(subMenuId) {
+  try {
+    const res = await getCardSections(subMenuId || null);
+    sectionSuggestions.value = res.data || [];
+  } catch {
+    sectionSuggestions.value = [];
+  }
+}
+
+// 批量设置分组
+const showBatchSectionModal = ref(false);
+const batchSectionValue = ref('');
+const batchSectionLoading = ref(false);
+
+function openBatchSectionModal() {
+  batchSectionValue.value = '';
+  showBatchSectionModal.value = true;
+  loadSectionSuggestions(activeSubMenu.value?.id);
+}
+
+async function applyBatchSectionToSelected() {
+  if (selectedCards.value.length === 0) return;
+  batchSectionLoading.value = true;
+
+  try {
+    const section = batchSectionValue.value.trim();
+    let successCount = 0;
+
+    for (const card of selectedCards.value) {
+      try {
+        await updateCard(card.id, {
+          menu_id: card.menu_id,
+          sub_menu_id: card.sub_menu_id,
+          title: card.title,
+          url: card.url,
+          logo_url: card.logo_url,
+          desc: card.desc,
+          order: card.order || 0,
+          section
+        });
+        card.section = section;
+        successCount++;
+      } catch (e) {
+        console.warn(`Failed to set section for card ${card.id}:`, e.message);
+      }
+    }
+
+    showBatchSectionModal.value = false;
+    selectedCards.value = [];
+    showToastMessage(`已为 ${successCount} 张卡片${section ? '设置分组「' + section + '」' : '清除分组'}`, 'success');
+    await loadCards(true);
+  } catch (err) {
+    showToastMessage('设置分组失败: ' + err.message, 'error');
+  } finally {
+    batchSectionLoading.value = false;
+  }
+}
 const batchError = ref('');
 const parsedCards = ref([]);
 const rememberPassword = ref(false);
@@ -2778,6 +2874,7 @@ function openQuickAddModal() {
     quickAddForm.value = { url: '', title: '', desc: '', section: '' };
     quickAddError.value = '';
     showQuickAddModal.value = true;
+    loadSectionSuggestions(activeSubMenu.value?.id);
   });
 }
 
@@ -4155,7 +4252,8 @@ async function moveCardToCategory(menuId, subMenuId) {
         url: card.url,
         logo_url: card.logo_url,
         desc: card.desc,
-        order: card.order || 0
+        order: card.order || 0,
+        section: card.section || ''
       };
       
       try {
@@ -4266,6 +4364,7 @@ async function handleEditCard(card) {
   };
   editError.value = '';
   showEditCardModal.value = true;
+  loadSectionSuggestions(card.sub_menu_id || activeSubMenu.value?.id);
   
   // 刷新 AI 配置状态（确保最新）
   checkAIConfig();
@@ -7629,6 +7728,15 @@ async function saveCardEdit() {
   font-weight: 400;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.45);
+}
+
+.toolbar-btn.section-btn {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.toolbar-btn.section-btn:hover {
+  background: rgba(99, 179, 237, 0.2);
+  color: #63b3ed;
 }
 
 /* 批量添加 - 统一分组栏 */

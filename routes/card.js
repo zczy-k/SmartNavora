@@ -350,6 +350,22 @@ function deleteCardsByIds(cardIds, clientId) {
   });
 }
 
+// 获取已有分组名称列表（用于自动补全）
+router.get('/sections', (req, res) => {
+  const { sub_menu_id } = req.query;
+  let sql = "SELECT DISTINCT section FROM cards WHERE section != '' AND section IS NOT NULL";
+  const params = [];
+  if (sub_menu_id) {
+    sql += ' AND sub_menu_id = ?';
+    params.push(sub_menu_id);
+  }
+  sql += ' ORDER BY section';
+  db.all(sql, params, (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows.map(r => r.section));
+  });
+});
+
 // 获取所有卡片（按分类分组，用于首屏加载优化）
 router.get('/', (req, res) => {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
