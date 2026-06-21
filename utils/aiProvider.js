@@ -153,6 +153,49 @@ async function callAI(config, messages) {
 }
 
 /**
+ * 将 API 错误转为用户友好的中文提示
+ * @param {number} status HTTP 状态码
+ * @param {string} detail 错误详情原文
+ * @returns {string} 友好的中文错误信息
+ */
+function friendlyAPIError(status, detail) {
+  const lower = (detail || '').toLowerCase();
+
+  // 400: 计划受限 / 无权限
+  if (status === 400 && (lower.includes('not allowed') || lower.includes('plan limited') || lower.includes('action plan'))) {
+    return 'API 配额已用完或当前套餐不支持该模型，请前往 AI 配置页面检查账户余额或升级计划';
+  }
+
+  // 401: API Key 无效
+  if (status === 401 || lower.includes('invalid api key') || lower.includes('unauthorized')) {
+    return 'API Key 无效或已过期，请前往 AI 配置页面重新设置';
+  }
+
+  // 403: 权限不足
+  if (status === 403 || lower.includes('forbidden') || lower.includes('permission denied')) {
+    return 'API 权限不足，请检查账户是否已完成实名认证或是否有权访问该模型';
+  }
+
+  // 404: 模型不存在
+  if (status === 404 || lower.includes('not found') || lower.includes('model not')) {
+    return '指定的模型不存在，请前往 AI 配置页面检查模型名称是否正确';
+  }
+
+  // 429: 频率限制
+  if (status === 429 || lower.includes('rate limit') || lower.includes('too many')) {
+    return '请求过于频繁，请稍后再试或检查 API 配额';
+  }
+
+  // 500+: 服务端错误
+  if (status >= 500) {
+    return `AI 服务商暂时不可用 (${status})，请稍后重试`;
+  }
+
+  // 兜底：返回原文
+  return `API 请求失败 (${status}): ${detail}`;
+}
+
+/**
  * OpenAI 兼容接口
  */
 async function callOpenAICompatible(config, messages) {
@@ -206,14 +249,14 @@ async function callOpenAICompatible(config, messages) {
 
     if (!response.ok) {
       const errText = await response.text();
-      let errorMessage = `API 请求失败 (${response.status})`;
+      let detail = errText;
       try {
         const errJson = JSON.parse(errText);
-        errorMessage += `: ${errJson.error?.message || errJson.message || errText}`;
+        detail = errJson.error?.message || errJson.message || errText;
       } catch {
-        errorMessage += `: ${errText}`;
+        // keep raw errText
       }
-      const error = new Error(errorMessage);
+      const error = new Error(friendlyAPIError(response.status, detail));
       error.status = response.status;
       throw error;
     }
@@ -269,14 +312,14 @@ async function callGemini(config, messages) {
 
     if (!response.ok) {
       const errText = await response.text();
-      let errorMessage = `Gemini API 错误 (${response.status})`;
+      let detail = errText;
       try {
         const errJson = JSON.parse(errText);
-        errorMessage += `: ${errJson.error?.message || errText}`;
+        detail = errJson.error?.message || errText;
       } catch {
-        errorMessage += `: ${errText}`;
+        // keep raw errText
       }
-      const error = new Error(errorMessage);
+      const error = new Error(friendlyAPIError(response.status, detail));
       error.status = response.status;
       throw error;
     }
@@ -332,14 +375,14 @@ async function callAnthropic(config, messages) {
 
     if (!response.ok) {
       const errText = await response.text();
-      let errorMessage = `Claude API 错误 (${response.status})`;
+      let detail = errText;
       try {
         const errJson = JSON.parse(errText);
-        errorMessage += `: ${errJson.error?.message || errText}`;
+        detail = errJson.error?.message || errText;
       } catch {
-        errorMessage += `: ${errText}`;
+        // keep raw errText
       }
-      const error = new Error(errorMessage);
+      const error = new Error(friendlyAPIError(response.status, detail));
       error.status = response.status;
       throw error;
     }
@@ -385,7 +428,7 @@ async function callOllama(config, messages) {
 
     if (!response.ok) {
       const errText = await response.text();
-      const error = new Error(`Ollama API 错误 (${response.status}): ${errText}`);
+      const error = new Error(friendlyAPIError(response.status, errText));
       error.status = response.status;
       throw error;
     }
