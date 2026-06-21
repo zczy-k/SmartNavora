@@ -1715,7 +1715,9 @@
                   // 加载已有分组名用于自动补全
                   let loadedSections = [];
                   chrome.runtime.sendMessage({ action: 'getSections' }, (resp) => {
-                      if (resp?.success && resp.sections?.length > 0) {
+                      if (chrome.runtime.lastError) {
+                          console.warn('获取分组列表失败:', chrome.runtime.lastError.message);
+                      } else if (resp?.success && resp.sections?.length > 0) {
                           loadedSections = resp.sections;
                       }
                       // 初始化自定义下拉交互
