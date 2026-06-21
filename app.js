@@ -193,7 +193,13 @@ app.use(cors({
   maxAge: 86400,
 }));
 app.use(express.json({ limit: '10mb' }));
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => {
+    // SSE 端点不能压缩，否则 gzip 缓冲会破坏实时推送
+    if (req.path.includes('/sse/')) return false;
+    return compression.filter(req, res);
+  }
+}));
 
 // 输入清理中间件
 app.use(sanitizeMiddleware);
@@ -311,9 +317,10 @@ app.get('/api/sse/data-sync', async (req, res) => {
     // 设置SSE响应头
     res.set({
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no' // 禁用nginx缓冲
+      'X-Accel-Buffering': 'no',    // 禁用 Nginx 缓冲
+      'X-Proxy-Buffering': 'no'     // 禁用其他代理缓冲
     });
     res.flushHeaders(); // 立即发送响应头
     
@@ -333,11 +340,11 @@ app.get('/api/sse/data-sync', async (req, res) => {
     // 添加到客户端列表
     addClient(res);
     
-    // 保持连接（心跳）
+    // 保持连接（心跳，15秒间隔，防止反向代理超时断开）
     const heartbeat = setInterval(() => {
       res.write(': heartbeat\n\n');
       if (res.flush) res.flush();
-    }, 30000);
+    }, 15000);
     
     // 清理
     req.on('close', () => {
