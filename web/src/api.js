@@ -180,6 +180,7 @@ export const addTag = (data) => instance.post(`/tags`, data);
 export const updateTag = (id, data) => instance.put(`/tags/${id}`, data);
 export const deleteTag = (id) => instance.delete(`/tags/${id}`);
 export const getTagCardCount = (id) => instance.get(`/tags/${id}/cards/count`);
+export const cleanupTags = () => instance.delete(`/tags/cleanup`);
 
 // 卡片去重API
 export const detectDuplicates = () => instance.get(`/cards/detect-duplicates/all?_t=${Date.now()}`);

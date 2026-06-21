@@ -14,6 +14,14 @@
           </svg>
           添加标签
         </button>
+        <button v-if="unusedCount > 0" class="btn btn-cleanup" @click="cleanupUnusedTags" title="删除所有未使用的标签">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+            <path d="M10 11v6M14 11v6"/>
+          </svg>
+          清理空标签
+          <span class="cleanup-badge">{{ unusedCount }}</span>
+        </button>
       </div>
     </div>
     
@@ -28,7 +36,7 @@
       </div>
       
       <div v-else class="tag-list">
-        <div v-for="tag in tags" :key="tag.id" class="tag-item">
+        <div v-for="tag in tags" :key="tag.id" class="tag-item" :class="{ unused: !tag.cardCount || tag.cardCount === 0 }">
           <div class="tag-preview" :style="{ backgroundColor: tag.color }">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
@@ -66,13 +74,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
-import { 
-  getTags, 
-  addTag as apiAddTag, 
-  updateTag as apiUpdateTag, 
+import { ref, computed, onMounted } from 'vue';
+import {
+  getTags,
+  addTag as apiAddTag,
+  updateTag as apiUpdateTag,
   deleteTag as apiDeleteTag,
-  getTagCardCount
+  cleanupTags as apiCleanupTags
 } from '../../api';
 import { useDataSync } from '../../composables/useDataSync';
 
@@ -91,15 +99,23 @@ onMounted(loadTags);
 async function loadTags() {
   const res = await getTags();
   tags.value = res.data;
-  
-  // 加载每个标签的卡片数量
-  for (const tag of tags.value) {
-    try {
-      const countRes = await getTagCardCount(tag.id);
-      tag.cardCount = countRes.data.count;
-    } catch (err) {
-      tag.cardCount = 0;
+}
+
+const unusedCount = computed(() => tags.value.filter(t => !t.cardCount || t.cardCount === 0).length);
+
+async function cleanupUnusedTags() {
+  if (unusedCount.value === 0) return;
+  if (!confirm(`确认删除 ${unusedCount.value} 个未使用的标签？此操作不可撤销。`)) return;
+
+  try {
+    const res = await apiCleanupTags();
+    const { deleted, names } = res.data;
+    if (deleted > 0) {
+      tags.value = tags.value.filter(t => t.cardCount && t.cardCount > 0);
+      alert(`已清理 ${deleted} 个空标签：${names.join('、')}`);
     }
+  } catch (err) {
+    alert('清理失败：' + (err.response?.data?.error || err.message));
   }
 }
 
@@ -494,5 +510,50 @@ async function deleteTag(id) {
     width: 100%;
     justify-content: space-between;
   }
+}
+
+/* 清理空标签按钮 */
+.btn-cleanup {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  position: relative;
+}
+
+.btn-cleanup:hover {
+  background: rgba(255, 77, 79, 0.85);
+  border-color: transparent;
+}
+
+.cleanup-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background: #ff4d4f;
+  color: white;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+/* 未使用标签样式 */
+.tag-item.unused {
+  opacity: 0.55;
+  border: 1px dashed #d9d9d9;
+  background: #fafafa;
+}
+
+.tag-item.unused .tag-stats .card-count {
+  color: #999;
+}
+
+.tag-item.unused .tag-stats .card-count::after {
+  content: ' (未使用)';
+  font-size: 11px;
+  color: #bbb;
 }
 </style>

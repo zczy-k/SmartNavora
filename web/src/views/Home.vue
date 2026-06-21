@@ -117,7 +117,7 @@
               <path v-else d="M9 12l2 2 4-4"/>
             </svg>
           </button>
-          <button v-if="allTags.length > 0" class="toolbar-icon-btn" :class="{ active: selectedTagIds.length > 0 }" @click="showTagPanel = !showTagPanel" title="标签筛选">
+          <button v-if="activeTags.length > 0" class="toolbar-icon-btn" :class="{ active: selectedTagIds.length > 0 }" @click="showTagPanel = !showTagPanel" title="标签筛选">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
               <line x1="7" y1="7" x2="7.01" y2="7"/>
@@ -173,9 +173,9 @@
             <button class="panel-close-btn" @click="showTagPanel = false">×</button>
           </div>
           <div class="tag-panel-content">
-            <button 
-              v-for="tag in allTags" 
-              :key="tag.id" 
+            <button
+              v-for="tag in activeTags"
+              :key="tag.id"
               class="panel-tag-btn"
               :class="{ active: isTagSelected(tag.id) }"
               :style="{ 
@@ -1154,6 +1154,7 @@ const rightPromos = ref([]);
 const showFriendLinks = ref(false);
 const friendLinks = ref([]);
 const allTags = ref([]);
+const activeTags = computed(() => allTags.value.filter(t => t.cardCount && t.cardCount > 0));
 const selectedTagIds = ref([]); // 支持多标签筛选
 const showTagPanel = ref(false); // 标签选择浮层
 

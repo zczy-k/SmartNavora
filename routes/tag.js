@@ -5,7 +5,20 @@ const { triggerDebouncedBackup } = require('../utils/autoBackup');
 const router = express.Router();
 
 router.get('/', (req, res) => {
-  db.all('SELECT * FROM tags ORDER BY "order", name', (err, rows) => {
+  const { unused } = req.query;
+
+  let sql = `SELECT t.*, COUNT(ct.card_id) as cardCount
+             FROM tags t
+             LEFT JOIN card_tags ct ON t.id = ct.tag_id
+             GROUP BY t.id`;
+
+  if (unused === 'true') {
+    sql += ' HAVING cardCount = 0';
+  }
+
+  sql += ' ORDER BY t."order", t.name';
+
+  db.all(sql, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
   });
@@ -74,6 +87,37 @@ router.put('/:id', auth, (req, res) => {
       
       triggerDebouncedBackup(clientId, { type: 'tags_updated' });
       res.json({ success: true });
+    }
+  );
+});
+
+// 清理未使用的标签（cardCount = 0）
+router.delete('/cleanup', auth, (req, res) => {
+  const clientId = req.headers['x-client-id'];
+
+  // 先查出待删除的标签名（用于返回）
+  db.all(
+    `SELECT t.id, t.name FROM tags t
+     LEFT JOIN card_tags ct ON t.id = ct.tag_id
+     GROUP BY t.id
+     HAVING COUNT(ct.card_id) = 0`,
+    (err, unusedTags) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      if (!unusedTags || unusedTags.length === 0) {
+        return res.json({ deleted: 0, names: [] });
+      }
+
+      const ids = unusedTags.map(t => t.id);
+      const names = unusedTags.map(t => t.name);
+      const placeholders = ids.map(() => '?').join(',');
+
+      db.run(`DELETE FROM tags WHERE id IN (${placeholders})`, ids, function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+
+        triggerDebouncedBackup(clientId, { type: 'tags_cleanup' });
+        res.json({ deleted: this.changes, names });
+      });
     }
   );
 });
