@@ -33,6 +33,7 @@
             <th>网址</th>
             <th>Logo链接</th>
             <th>描述</th>
+            <th>分组</th>
             <th>排序</th>
             <th>操作</th>
           </tr>
@@ -43,6 +44,7 @@
             <td><input v-model="card.url" @blur="updateCard(card)" class="table-input" /></td>
             <td><input v-model="card.logo_url" @blur="updateCard(card)" class="table-input" placeholder="logo链接(可选)" /></td>
             <td><input v-model="card.desc" @blur="updateCard(card)" class="table-input" placeholder="描述（可选）" /></td>
+            <td><input v-model="card.section" @blur="updateCard(card)" class="table-input" placeholder="分组（可选）" /></td>
             <td><input v-model.number="card.order" type="number" @blur="updateCard(card)" class="table-input order-input" /></td>
             <td>
               <button class="btn btn-danger btn-icon" @click="deleteCard(card.id)" title="删除">
@@ -388,7 +390,8 @@ async function updateCard(card) {
     url: card.url,
     logo_url: card.logo_url,
     desc: card.desc,
-    order: card.order
+    order: card.order,
+    section: card.section || ''
   });
   await loadCards();
 }

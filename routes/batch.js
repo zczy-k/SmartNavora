@@ -294,12 +294,12 @@ router.post('/add', auth, (req, res) => {
 
       // 逐个插入非重复卡片
       uniqueCards.forEach((card, index) => {
-        const { title, url, logo, description } = card;
+        const { title, url, logo, description, section } = card;
         const order = nextOrder + index;
 
       db.run(
-        'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc, "order") VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [menu_id, sub_menu_id || null, title, url, logo, description, order],
+        'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc, "order", section) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [menu_id, sub_menu_id || null, title, url, logo, description, order, section || ''],
         function(err) {
           if (err && !hasError) {
             hasError = true;

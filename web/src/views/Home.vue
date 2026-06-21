@@ -268,22 +268,29 @@
             </div>
           </div>
 <transition name="group-collapse">
-                <CardGrid
-                  v-if="!isGroupCollapsed(group.key)"
-                  :cards="sortAndFilterCards(group.cards, group.subMenuId)" 
-                  :selectedCards="selectedCards"
-                  :selectionMode="selectedCards.length > 0"
-                  :categoryId="activeMenu?.id"
-                  :subCategoryId="group.subMenuId"
-                  @contextEdit="handleContextEdit"
-                  @contextDelete="handleContextDelete"
-                  @toggleCardSelection="handleToggleCardSelection"
-                  @openMovePanel="openMovePanel"
-                  @requireAuth="handleRequireAuth"
-                  @cardClicked="handleCardClicked"
-                  @click.stop
-                />
-              </transition>
+              <div v-if="!isGroupCollapsed(group.key)">
+                <template v-for="sec in groupBySection(sortAndFilterCards(group.cards, group.subMenuId))" :key="sec.section || '__default__'">
+                  <div v-if="sec.section" class="section-header">
+                    <span class="section-title">{{ sec.section }}</span>
+                    <span class="section-count">{{ sec.cards.length }}</span>
+                  </div>
+                  <CardGrid
+                    :cards="sec.cards"
+                    :selectedCards="selectedCards"
+                    :selectionMode="selectedCards.length > 0"
+                    :categoryId="activeMenu?.id"
+                    :subCategoryId="group.subMenuId"
+                    @contextEdit="handleContextEdit"
+                    @contextDelete="handleContextDelete"
+                    @toggleCardSelection="handleToggleCardSelection"
+                    @openMovePanel="openMovePanel"
+                    @requireAuth="handleRequireAuth"
+                    @cardClicked="handleCardClicked"
+                    @click.stop
+                  />
+                </template>
+              </div>
+            </transition>
         </div>
       </template>
     </div>
@@ -295,20 +302,26 @@
           <span class="group-count">{{ sortedFilteredCards.length }}</span>
         </div>
       </div>
-<CardGrid
-            :cards="sortedFilteredCards" 
-            :selectedCards="selectedCards"
-            :selectionMode="selectedCards.length > 0"
-            :categoryId="activeMenu?.id"
-            :subCategoryId="activeSubMenu?.id"
-            @contextEdit="handleContextEdit"
-            @contextDelete="handleContextDelete"
-            @toggleCardSelection="handleToggleCardSelection"
-            @openMovePanel="openMovePanel"
-            @requireAuth="handleRequireAuth"
-            @cardClicked="handleCardClicked"
-            @click.stop
-          />
+      <template v-for="sec in groupBySection(sortedFilteredCards)" :key="sec.section || '__default__'">
+        <div v-if="sec.section" class="section-header">
+          <span class="section-title">{{ sec.section }}</span>
+          <span class="section-count">{{ sec.cards.length }}</span>
+        </div>
+        <CardGrid
+          :cards="sec.cards"
+          :selectedCards="selectedCards"
+          :selectionMode="selectedCards.length > 0"
+          :categoryId="activeMenu?.id"
+          :subCategoryId="activeSubMenu?.id"
+          @contextEdit="handleContextEdit"
+          @contextDelete="handleContextDelete"
+          @toggleCardSelection="handleToggleCardSelection"
+          @openMovePanel="openMovePanel"
+          @requireAuth="handleRequireAuth"
+          @cardClicked="handleCardClicked"
+          @click.stop
+        />
+      </template>
     </div>
     
     <!-- 背景选择面板 -->
@@ -714,6 +727,15 @@
                 </button>
               </div>
             </div>
+            <div class="form-group">
+              <label>分组 <span class="field-hint">（可选，用于在子菜单内进一步分类）</span></label>
+              <input
+                v-model="cardEditForm.section"
+                placeholder="例如：AI 工具、开发环境、数据库"
+                class="batch-input"
+                maxlength="30"
+              />
+            </div>
             <p v-if="editError" class="batch-error">{{ editError }}</p>
             <div class="batch-actions" style="margin-top: 20px;">
               <button @click="closeEditCardModal" class="btn btn-cancel">取消</button>
@@ -973,6 +995,23 @@ function sortAndFilterCards(cardList, subMenuId) {
 
   return applySorting(filterCardsByActiveCriteria(cardList));
 }
+
+// 将卡片按 section 字段分组，返回 [{ section: '分组名', cards: [...] }, ...]
+// 没有 section 的卡片归入空字符串组（不显示标题）
+function groupBySection(cardList) {
+  if (!cardList || cardList.length === 0) return [];
+  const map = new Map();
+  const order = [];
+  for (const card of cardList) {
+    const sec = card.section || '';
+    if (!map.has(sec)) {
+      map.set(sec, []);
+      order.push(sec);
+    }
+    map.get(sec).push(card);
+  }
+  return order.map(sec => ({ section: sec, cards: map.get(sec) }));
+}
 const leftPromos = ref([]);
 const rightPromos = ref([]);
 const showFriendLinks = ref(false);
@@ -1059,7 +1098,8 @@ const cardEditForm = ref({
   title: '',
   url: '',
   logo_url: '',
-  desc: ''
+  desc: '',
+  section: ''
 });
 
 // 标签搜索和快速创建
@@ -4099,7 +4139,8 @@ async function handleEditCard(card) {
     title: card.title || '',
     url: card.url || '',
     logo_url: card.logo_url || '',
-    desc: card.desc || ''
+    desc: card.desc || '',
+    section: card.section || ''
   };
   editError.value = '';
   showEditCardModal.value = true;
@@ -4126,7 +4167,8 @@ function closeEditCardModal() {
     title: '',
     url: '',
     logo_url: '',
-    desc: ''
+    desc: '',
+    section: ''
   };
   quickTagName.value = '';
   quickTagColor.value = '#1890ff';
@@ -4266,7 +4308,8 @@ async function saveCardEdit() {
     title: cardEditForm.value.title,
     url: cardEditForm.value.url,
     logo_url: cardEditForm.value.logo_url,
-    desc: cardEditForm.value.desc
+    desc: cardEditForm.value.desc,
+    section: cardEditForm.value.section || ''
   };
   
     try {
@@ -7428,6 +7471,42 @@ async function saveCardEdit() {
 
 .card-group:first-child .card-group-header {
   margin-top: 2.5vh;
+}
+
+/* 卡片分组标题 */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 8px;
+  padding: 0 4px;
+}
+
+.section-header .section-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+.section-header .section-count {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 400;
+}
+
+.section-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.15), transparent);
+}
+
+.field-hint {
+  font-weight: 400;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .group-header-left {

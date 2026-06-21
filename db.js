@@ -106,6 +106,7 @@ async function initializeDatabase() {
       logo_url TEXT,
       custom_logo_path TEXT,
       desc TEXT,
+      section TEXT DEFAULT '',
       "order" INTEGER DEFAULT 0,
       click_count INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -192,6 +193,9 @@ async function initializeDatabase() {
     } catch (e) { }
     try {
       await dbRun(`ALTER TABLE cards ADD COLUMN created_at TEXT DEFAULT CURRENT_TIMESTAMP`);
+    } catch (e) { }
+    try {
+      await dbRun(`ALTER TABLE cards ADD COLUMN section TEXT DEFAULT ''`);
     } catch (e) { }
     // 为旧卡片设置默认创建时间
     try {

@@ -482,7 +482,7 @@ router.patch('/batch-update', auth, (req, res) => {
 
 // 新增卡片
 router.post('/', auth, (req, res) => {
-  const { menu_id, sub_menu_id, title, url, logo_url, desc, order } = req.body;
+  const { menu_id, sub_menu_id, title, url, logo_url, desc, order, section } = req.body;
   const clientId = req.headers['x-client-id'];
   
   // 先检查是否重复
@@ -505,8 +505,8 @@ router.post('/', auth, (req, res) => {
     
     // 不重复，添加卡片
     db.run(
-      'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc, "order") VALUES (?, ?, ?, ?, ?, ?, ?)', 
-      [menu_id, sub_menu_id || null, title, url, logo_url, desc, order || 0],
+      'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc, "order", section) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [menu_id, sub_menu_id || null, title, url, logo_url, desc, order || 0, section || ''],
       function(err) {
         if (err) return res.status(500).json({error: err.message});
         
@@ -525,13 +525,13 @@ router.post('/', auth, (req, res) => {
 
 // 更新卡片
 router.put('/:id', auth, (req, res) => {
-  const { menu_id, sub_menu_id, title, url, logo_url, desc, order } = req.body;
+  const { menu_id, sub_menu_id, title, url, logo_url, desc, order, section } = req.body;
   const { id } = req.params;
   const clientId = req.headers['x-client-id'];
-  
+
   db.run(
-    'UPDATE cards SET menu_id=?, sub_menu_id=?, title=?, url=?, logo_url=?, desc=?, "order"=? WHERE id=?', 
-    [menu_id, sub_menu_id || null, title, url, logo_url, desc, order || 0, id],
+    'UPDATE cards SET menu_id=?, sub_menu_id=?, title=?, url=?, logo_url=?, desc=?, "order"=?, section=? WHERE id=?',
+    [menu_id, sub_menu_id || null, title, url, logo_url, desc, order || 0, section || '', id],
     function(err) {
       if (err) return res.status(500).json({error: err.message});
       
