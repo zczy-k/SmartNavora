@@ -1832,7 +1832,6 @@ async function autoGenerateForCards(cardIds) {
     const validation = validateAIConfig(config);
     if (!validation.valid) return;
     
-    // tags removed
     const delay = Math.max(500, parseInt(rawConfig.requestDelay) || 1500);
     let hasUpdates = false;
     
