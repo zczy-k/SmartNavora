@@ -7,8 +7,8 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 // 抓取配置
-const FETCH_TIMEOUT = 2000;       // 超时 2 秒
-const MAX_BODY_SIZE = 100 * 1024; // 最多下载 100KB（<head> 通常在前 10-20KB）
+const FETCH_TIMEOUT = 4000;       // 超时 4 秒（Discourse 等重型站点需要更长时间）
+const MAX_BODY_SIZE = 500 * 1024; // 最多下载 500KB（Discourse 等 SPA 框架 <head> 可达 200KB+）
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 /**

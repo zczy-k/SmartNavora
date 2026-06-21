@@ -711,7 +711,7 @@ function analyzePageType(url, title = '') {
         product: ['/product', '/products', '/pricing', '/plans', '/features', '/solutions', '/enterprise', '/about', '/tour', '/showcase', '/case-studies'],
         download: ['/download', '/downloads', '/release', '/releases', '/install', '/get-started', '/setup'],
         api: ['/api/', '/v1/', '/v2/', '/v3/', '/graphql', '/rest/', '/endpoints', '/developers', '/developer'],
-        forum: ['/forum', '/community', '/discuss', '/discussions', '/questions', '/question/', '/answers', '/threads', '/topic/', '/issues', '/r/', '/t/'],
+        forum: ['/forum', '/community', '/discuss', '/discussions', '/questions', '/question/', '/answers', '/threads', '/topic/', '/issues', '/r/', '/t/', '/latest', '/top', '/categories', '/new', '/bbs', '/board', '/thread/', '/message'],
         support: ['/support', '/help', '/faq', '/contact', '/feedback', '/tickets', '/kb', '/knowledge-base'],
         legal: ['/terms', '/privacy', '/legal', '/policy', '/cookies', '/gdpr', '/tos', '/eula', '/license'],
         profile: ['/profile', '/user/', '/account', '/settings', '/preferences', '/u/', '/@', '/me', '/my'],
@@ -1037,13 +1037,15 @@ function buildUnifiedPrompt(card, types, metadata = null) {
 ### 2. 描述 (description) 生成规则
 - 回答"这个网站对用户有什么用？"，而非描述网站本身
 - 优先使用【网站自述】中的真实信息来提炼，不要凭空编造
-- 长度指引：品牌首页 12-25 字；工具/文档页 18-35 字；博客/文章 15-30 字
+- 长度指引：品牌首页 12-25 字；工具/文档页 18-35 字；博客/文章/社区 15-30 字
 - 禁止使用的空泛表述："全球领先的..."（除非确实 TOP3）、"一站式...平台"、"致力于..."、"专注于..."、"专业的...服务"、"这是一个"、"本网站"
 - 应使用具体描述：说明核心功能、用户价值、差异化定位
+- 当【网站自述】只是品牌口号（如"开放、分享、探索"）而非实际描述时，基于页面类型和 URL 推断用途，不要照搬口号
+- 论坛/社区类网站：说明社区定位和讨论主题，而非重复 slogan
 
 ## 重要提示
-- 如果有【网站自述】，优先基于它来提炼描述，比凭空推断更准确
-- 如果信息不足，基于 URL 和域名做合理推断，不要输出"无法确定"类内容
+- 如果有【网站自述】且包含实际信息，优先基于它来提炼描述
+- 如果信息不足，基于 URL 路径和域名做合理推断，不要输出"无法确定"类内容
 - 必须输出纯 JSON 对象，严禁包含思考过程、解释说明或 Markdown 标记
 - 输出格式：{"name":"名称","description":"描述"}`
     },
@@ -1076,7 +1078,11 @@ function buildUnifiedPrompt(card, types, metadata = null) {
     { role: 'user', content: '【网站URL】https://overreacted.io/a-complete-guide-to-useeffect/\n【原始标题】A Complete Guide to useEffect — overreacted\n【页面类型】博客/文章\n【品牌识别】overreacted' },
     { role: 'assistant', content: '{"name":"useEffect 完全指南","description":"Dan Abramov 深入讲解 React useEffect 的工作原理"}' },
 
-    // 8. 信息极度匮乏场景
+    // 8. 论坛/社区（网站自述只是口号）
+    { role: 'user', content: '【网站URL】https://aito.do/latest\n【原始标题】Aito.do - 开放、分享、探索\n【品牌名】Aito.do\n【网站自述】Aito.do - 开放、分享、探索\n【页面类型】论坛/社区\n【品牌识别】Aito.do\n【分析提示】路径包含 forum 相关关键词' },
+    { role: 'assistant', content: '{"name":"Aito.do","description":"AI 技术爱好者交流社区，讨论大模型、开发工具与网络配置等话题"}' },
+
+    // 9. 信息极度匮乏场景
     { role: 'user', content: '【网站URL】https://example-tool.com/\n【原始标题】无\n【页面类型】网站首页\n【品牌识别】Example Tool' },
     { role: 'assistant', content: '{"name":"Example Tool","description":"Example Tool 官方网站与产品平台"}' },
 
@@ -1194,6 +1200,11 @@ function buildDescriptionPrompt(card, metadata = null) {
 - 说明"讲什么内容"+"适合谁看"
 - 长度目标：18-35 字
 
+### 问答/社区/论坛
+- 说明社区定位、讨论主题和核心价值
+- 长度目标：15-30 字
+- 如果 URL 包含 /latest、/top、/categories 等路径，说明这是论坛的列表页面，用品牌名作为名称
+
 ### 博客/文章页
 - 概括核心观点或主题
 - 长度目标：15-30 字
@@ -1202,9 +1213,12 @@ function buildDescriptionPrompt(card, metadata = null) {
 - 描述产品核心功能，而非登录行为
 - 长度目标：15-30 字
 
-### 问答/社区
-- 说明社区定位和核心价值
-- 长度目标：15-30 字
+## 识别并跳过无用的网站自述
+很多网站的 meta description 只是品牌口号（如"开放、分享、探索"、"让创意 flourish"、"Just do it"），不包含实际信息。
+遇到这类情况时，**不要照搬口号**，而是基于以下信息推断网站用途：
+1. 页面类型分析（forum → 论坛社区，blog → 博客，tool → 工具）
+2. URL 路径特征（/latest → 论坛帖子列表，/t/ → 论坛帖子详情）
+3. 域名暗示（如 aito.do 暗示 AI 相关社区）
 
 ## 反同质化规则（严格执行）
 
@@ -1232,6 +1246,10 @@ function buildDescriptionPrompt(card, metadata = null) {
     { role: 'assistant', content: '智能压缩 PNG/JPEG/WebP 图片，最高减少 80% 体积' },
     { role: 'user', content: '网站名称：知乎\n网站地址：https://www.zhihu.com/\n页面类型：问答社区\n品牌：知乎\n输出描述：' },
     { role: 'assistant', content: '中文互联网高质量问答社区与知识分享平台' },
+    { role: 'user', content: '网站名称：Aito.do\n网站地址：https://aito.do/latest\n网站自述：Aito.do - 开放、分享、探索\n页面类型：论坛/社区\n品牌：Aito.do\n分析提示：路径包含 forum 相关关键词\n输出描述：' },
+    { role: 'assistant', content: 'AI 技术爱好者交流社区，讨论大模型、开发工具与网络配置等话题' },
+    { role: 'user', content: '网站名称：V2EX\n网站地址：https://www.v2ex.com/\n网站自述：V2EX = way to explore\n页面类型：论坛/社区\n品牌：V2EX\n输出描述：' },
+    { role: 'assistant', content: '程序员与创意工作者的技术讨论社区' },
     { role: 'user', content: '网站名称：Example\n网站地址：https://example.com/\n页面类型：网站首页\n品牌：Example\n输出描述：' },
     { role: 'assistant', content: 'Example 官方网站与产品平台' },
     // 实际请求
