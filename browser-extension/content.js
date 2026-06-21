@@ -1307,6 +1307,27 @@
                       border-color: #667eea;
                       box-shadow: 0 0 0 2px rgba(102,126,234,0.15);
                   }
+                  .confirm-section-input {
+                      background: #fff;
+                      border: 1px solid #e2e5e8;
+                      border-radius: 6px;
+                      outline: none;
+                      flex: 1;
+                      padding: 4px 8px;
+                      font-size: 13px;
+                      font-weight: 500;
+                      color: #333;
+                      font-family: inherit;
+                      min-width: 0;
+                  }
+                  .confirm-section-input:focus {
+                      border-color: #667eea;
+                      box-shadow: 0 0 0 2px rgba(102,126,234,0.15);
+                  }
+                  .confirm-section-input::placeholder {
+                      color: #aaa;
+                      font-weight: 400;
+                  }
                   .confirm-category-path {
                       color: #667eea;
                       display: flex;
@@ -1435,6 +1456,10 @@
                                   <div class="confirm-row">
                                       <span class="confirm-label">分类：</span>
                                       <span class="confirm-value confirm-category-path" id="confirmCategoryText"></span>
+                                  </div>
+                                  <div class="confirm-row">
+                                      <span class="confirm-label">分组：</span>
+                                      <input type="text" class="confirm-value confirm-section-input" id="confirmSectionText" placeholder="可选，如：AI 工具、开发环境">
                                   </div>
                                   <div class="confirm-row">
                                       <span class="confirm-label">链接：</span>
@@ -1655,6 +1680,12 @@
                   dialogShadowRoot.getElementById('confirmTitleText').value = customTitle;
                   dialogShadowRoot.getElementById('confirmCategoryText').textContent = categoryPath;
                   dialogShadowRoot.getElementById('confirmUrlText').textContent = url;
+                  // 加载上次使用的分组
+                  const sectionKey = `lastSection_${selectedMenuId}_${selectedSubMenuId || '0'}`;
+                  chrome.storage.sync.get([sectionKey], (result) => {
+                      const sectionInput = dialogShadowRoot.getElementById('confirmSectionText');
+                      if (sectionInput) sectionInput.value = result[sectionKey] || '';
+                  });
                   checkDuplicateForConfirmation(url, customTitle);
               } else {
                   // 返回选择步骤
@@ -2838,19 +2869,27 @@ if (response.success) {
         try {
             const customTitle = dialogShadowRoot.getElementById('customTitle').value;
             const customDesc = dialogShadowRoot.getElementById('customDesc').value;
+            const customSection = dialogShadowRoot.getElementById('confirmSectionText')?.value?.trim() || '';
             const allowCheckbox = dialogShadowRoot.getElementById('allowMultiPathDomainCheckbox');
             const preferenceVisible = dialogShadowRoot.getElementById('duplicatePreference')?.classList.contains('show');
             if (preferenceVisible && allowCheckbox?.checked) {
                 await allowMultiPathDomain(url);
             }
-            
+
+            // 保存本次使用的分组
+            if (customSection) {
+                const sectionKey = `lastSection_${selectedMenuId}_${selectedSubMenuId || '0'}`;
+                chrome.storage.sync.set({ [sectionKey]: customSection });
+            }
+
             const response = await chrome.runtime.sendMessage({
                 action: 'addToCategory',
                 menuId: selectedMenuId.toString(),
                 subMenuId: selectedSubMenuId?.toString(),
                 url: url,
                 title: customTitle,
-                description: customDesc
+                description: customDesc,
+                section: customSection
             });
             
             if (handleAddResponse(response)) {

@@ -700,7 +700,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // 添加到指定分类
-async function addToSpecificCategory(menuItemId, url, title, tabId = null) {
+async function addToSpecificCategory(menuItemId, url, title, tabId = null, section = '') {
     try {
         let menuId, subMenuId = null;
         
@@ -729,7 +729,8 @@ async function addToSpecificCategory(menuItemId, url, title, tabId = null) {
         
         // 构建卡片数据（包含自动生成的标签和描述）
         const card = await buildCardData(url, title, navServerUrl, token, tabId);
-        
+        if (section) card.section = section;
+
         const response = await fetch(`${navServerUrl}/api/batch/add`, {
             method: 'POST',
             headers: { 
@@ -1206,7 +1207,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         const menuItemId = request.subMenuId 
             ? `nav_submenu_${request.menuId}_${request.subMenuId}`
             : `nav_menu_${request.menuId}`;
-        addToSpecificCategory(menuItemId, request.url, request.title || document.title, null)
+        addToSpecificCategory(menuItemId, request.url, request.title || document.title, null, request.section || '')
             .then(result => sendResponse({ success: true, ...result }))
             .catch(e => {
                 if (e.needAuth !== undefined) {
