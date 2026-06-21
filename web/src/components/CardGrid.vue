@@ -31,7 +31,7 @@
             <span class="link-text" @contextmenu.prevent>{{ truncate(card.title) }}</span>
           </a>
         <div v-if="isCardSelected(card)" class="card-selected-badge">✓</div>
-        <div v-if="hoveredCardId === card.id && !selectionMode" class="card-tooltip">
+        <div v-if="hoveredCardId === card.id && !selectionMode && card.desc" class="card-tooltip">
           <div class="tooltip-content">{{ getTooltip(card) }}</div>
         </div>
       </div>
@@ -322,13 +322,9 @@ function onImgError(e, card) {
 }
 
 function getTooltip(card) {
-  let tip = '';
-  if (card.desc) tip += card.desc + '\n';
-  if (card.tags && card.tags.length > 0) {
-    tip += '标签: ' + card.tags.map(t => t.name).join(', ') + '\n';
-  }
-  tip += card.url;
-  return tip;
+  if (!card.desc) return '';
+  const maxLen = 50;
+  return card.desc.length > maxLen ? card.desc.slice(0, maxLen) + '…' : card.desc;
 }
 
 function truncate(str) {
@@ -528,22 +524,26 @@ function isCardSelected(card) {
   margin-top: 6px;
   z-index: 100;
   pointer-events: none;
-  white-space: pre-line;
+  width: max-content;
+  max-width: 220px;
 }
 
 .card-tooltip .tooltip-content {
-  background: rgba(20, 20, 30, 0.88);
+  background: rgba(20, 20, 30, 0.9);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  color: #fff;
-  padding: 8px 14px;
-  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.92);
+  padding: 6px 12px;
+  border-radius: 8px;
   font-size: 12px;
-  line-height: 1.6;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
-  max-width: 260px;
-  word-break: break-all;
+  line-height: 1.5;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  word-break: break-word;
   text-align: left;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .link-item:hover .card-tooltip {
