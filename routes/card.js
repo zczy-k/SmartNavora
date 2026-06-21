@@ -359,6 +359,29 @@ router.get('/sections', (req, res) => {
   });
 });
 
+// 重命名分组（仅限指定子菜单下的卡片）
+router.patch('/sections/rename', auth, (req, res) => {
+  const { oldName, newName, sub_menu_id } = req.body;
+  if (!oldName || !newName) return res.status(400).json({ error: '缺少分组名称' });
+  if (oldName === newName) return res.json({ success: true, updated: 0 });
+
+  let sql, params;
+  if (sub_menu_id) {
+    sql = "UPDATE cards SET section = ? WHERE section = ? AND sub_menu_id = ?";
+    params = [newName, oldName, sub_menu_id];
+  } else {
+    sql = "UPDATE cards SET section = ? WHERE section = ? AND (sub_menu_id IS NULL)";
+    params = [newName, oldName];
+  }
+
+  db.run(sql, params, function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    const clientId = req.headers['x-client-id'];
+    if (this.changes > 0) triggerDebouncedBackup(clientId, { type: 'cards_updated' });
+    res.json({ success: true, updated: this.changes });
+  });
+});
+
 // 获取所有卡片（按分类分组，用于首屏加载优化）
 router.get('/', (req, res) => {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');

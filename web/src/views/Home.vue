@@ -277,7 +277,13 @@
               <div v-if="!isGroupCollapsed(group.key)">
                 <template v-for="sec in groupBySection(sortAndFilterCards(group.cards, group.subMenuId))" :key="sec.section || '__default__'">
                   <div v-if="sec.section" class="section-header">
-                    <span class="section-title">{{ sec.section }}</span>
+                    <span v-if="editingSection !== sec.section" class="section-title" @click="startEditSection(sec.section, group.subMenuId)" title="点击重命名分组">
+                      {{ sec.section }}
+                      <svg class="section-edit-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                    </span>
+                    <span v-else class="section-title section-editing">
+                      <input v-model="editingSectionValue" class="section-rename-input" @keyup.enter="saveSectionRename(group.subMenuId)" @keyup.escape="editingSection = ''" @blur="saveSectionRename(group.subMenuId)" ref="sectionRenameInput" />
+                    </span>
                     <span class="section-count">{{ sec.cards.length }}</span>
                   </div>
                   <CardGrid
@@ -311,7 +317,13 @@
       </div>
       <template v-for="sec in groupBySection(sortedFilteredCards)" :key="sec.section || '__default__'">
         <div v-if="sec.section" class="section-header">
-          <span class="section-title">{{ sec.section }}</span>
+          <span v-if="editingSection !== sec.section" class="section-title" @click="startEditSection(sec.section, activeSubMenu?.id || null)" title="点击重命名分组">
+            {{ sec.section }}
+            <svg class="section-edit-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+          </span>
+          <span v-else class="section-title section-editing">
+            <input v-model="editingSectionValue" class="section-rename-input" @keyup.enter="saveSectionRename(activeSubMenu?.id || null)" @keyup.escape="editingSection = ''" @blur="saveSectionRename(activeSubMenu?.id || null)" />
+          </span>
           <span class="section-count">{{ sec.cards.length }}</span>
         </div>
         <CardGrid
@@ -1118,6 +1130,8 @@ const quickAddLoading = ref(false);
 const quickAddError = ref('');
 const quickAddForm = ref({ url: '', title: '', desc: '', section: '' });
 const sectionSuggestions = ref([]);
+const editingSection = ref('');
+const editingSectionValue = ref('');
 
 async function loadSectionSuggestions() {
   try {
@@ -1125,6 +1139,35 @@ async function loadSectionSuggestions() {
     sectionSuggestions.value = res.data || [];
   } catch {
     sectionSuggestions.value = [];
+  }
+}
+
+// 分组重命名
+function startEditSection(sectionName) {
+  editingSection.value = sectionName;
+  editingSectionValue.value = sectionName;
+  nextTick(() => {
+    const input = document.querySelector('.section-rename-input');
+    if (input) { input.focus(); input.select(); }
+  });
+}
+
+async function saveSectionRename(subMenuId) {
+  const oldName = editingSection.value;
+  const newName = editingSectionValue.value.trim();
+  editingSection.value = '';
+  if (!newName || newName === oldName) return;
+
+  try {
+    await apiInstance.patch('/api/cards/sections/rename', {
+      oldName,
+      newName,
+      sub_menu_id: subMenuId || null
+    });
+    showToastMessage(`分组「${oldName}」已重命名为「${newName}」`, 'success');
+    await loadCards(true);
+  } catch (err) {
+    showToastMessage('重命名失败: ' + (err.response?.data?.error || err.message), 'error');
   }
 }
 
@@ -7715,6 +7758,38 @@ async function saveCardEdit() {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.35);
   font-weight: 400;
+}
+
+.section-title {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.section-edit-icon {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.section-title:hover .section-edit-icon {
+  opacity: 0.6;
+}
+
+.section-title.section-editing {
+  cursor: default;
+}
+
+.section-rename-input {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(99, 179, 237, 0.5);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 1px 6px;
+  outline: none;
+  width: 120px;
 }
 
 .section-header::after {

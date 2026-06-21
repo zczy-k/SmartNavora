@@ -1273,6 +1273,7 @@
                   .confirm-row {
                       display: flex;
                       margin-bottom: 12px;
+                      position: relative;
                   }
                   .confirm-row:last-child {
                       margin-bottom: 0;
@@ -1327,6 +1328,30 @@
                   .confirm-section-input::placeholder {
                       color: #aaa;
                       font-weight: 400;
+                  }
+                  .section-suggestions {
+                      position: absolute;
+                      left: 60px;
+                      right: 0;
+                      top: 100%;
+                      background: #fff;
+                      border: 1px solid #e2e5e8;
+                      border-radius: 6px;
+                      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                      max-height: 150px;
+                      overflow-y: auto;
+                      z-index: 100;
+                  }
+                  .section-suggestion-item {
+                      padding: 6px 10px;
+                      font-size: 13px;
+                      color: #333;
+                      cursor: pointer;
+                      transition: background 0.1s;
+                  }
+                  .section-suggestion-item:hover {
+                      background: #f0f2ff;
+                      color: #667eea;
                   }
                   .confirm-category-path {
                       color: #667eea;
@@ -1459,8 +1484,8 @@
                                   </div>
                                   <div class="confirm-row">
                                       <span class="confirm-label">分组：</span>
-                                      <input type="text" class="confirm-value confirm-section-input" id="confirmSectionText" placeholder="可选，如：AI 工具、开发环境" list="sectionDatalist">
-                                      <datalist id="sectionDatalist"></datalist>
+                                      <input type="text" class="confirm-value confirm-section-input" id="confirmSectionText" placeholder="可选，如：AI 工具、开发环境" autocomplete="off">
+                                      <div class="section-suggestions" id="sectionSuggestions" style="display:none;"></div>
                                   </div>
                                   <div class="confirm-row">
                                       <span class="confirm-label">链接：</span>
@@ -1688,12 +1713,40 @@
                       if (sectionInput) sectionInput.value = result[sectionKey] || '';
                   });
                   // 加载已有分组名用于自动补全
-                  chrome.runtime.sendMessage({ action: 'getSections', subMenuId: selectedSubMenuId }, (resp) => {
+                  let loadedSections = [];
+                  chrome.runtime.sendMessage({ action: 'getSections' }, (resp) => {
                       if (resp?.success && resp.sections?.length > 0) {
-                          const datalist = dialogShadowRoot.getElementById('sectionDatalist');
-                          if (datalist) {
-                              datalist.innerHTML = resp.sections.map(s => `<option value="${escapeHtml(s)}">`).join('');
+                          loadedSections = resp.sections;
+                      }
+                      // 初始化自定义下拉交互
+                      const sectionInput = dialogShadowRoot.getElementById('confirmSectionText');
+                      const suggestionsBox = dialogShadowRoot.getElementById('sectionSuggestions');
+                      if (sectionInput && suggestionsBox) {
+                          function showSuggestions(filter) {
+                              const q = (filter || '').toLowerCase();
+                              const filtered = loadedSections.filter(s => !q || s.toLowerCase().includes(q));
+                              if (filtered.length === 0) {
+                                  suggestionsBox.style.display = 'none';
+                                  return;
+                              }
+                              suggestionsBox.innerHTML = filtered.map(s =>
+                                  `<div class="section-suggestion-item" data-value="${escapeHtml(s)}">${escapeHtml(s)}</div>`
+                              ).join('');
+                              suggestionsBox.style.display = 'block';
                           }
+                          sectionInput.addEventListener('focus', () => showSuggestions(sectionInput.value));
+                          sectionInput.addEventListener('input', () => showSuggestions(sectionInput.value));
+                          suggestionsBox.addEventListener('mousedown', (e) => {
+                              const item = e.target.closest('.section-suggestion-item');
+                              if (item) {
+                                  e.preventDefault();
+                                  sectionInput.value = item.dataset.value;
+                                  suggestionsBox.style.display = 'none';
+                              }
+                          });
+                          sectionInput.addEventListener('blur', () => {
+                              setTimeout(() => { suggestionsBox.style.display = 'none'; }, 150);
+                          });
                       }
                   });
                   checkDuplicateForConfirmation(url, customTitle);
