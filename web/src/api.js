@@ -127,11 +127,8 @@ export const getCards = (menuId, subMenuId = null, noCache = false) => {
   if (noCache) params._t = Date.now(); // 添加时间戳绕过浏览器缓存
   return instance.get(`/cards/${menuId}`, { params });
 };
-// 获取已有分组名称（用于自动补全）
-export const getCardSections = (subMenuId) => {
-  const params = subMenuId ? { sub_menu_id: subMenuId } : {};
-  return instance.get('/cards/sections', { params });
-};
+// 获取已有分组名称（全局，用于自动补全）
+export const getCardSections = () => instance.get('/cards/sections');
 // 批量获取所有卡片（按分类分组）
 export const getAllCards = (noCache = false) => {
   const params = noCache ? { _t: Date.now() } : {};

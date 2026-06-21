@@ -1229,8 +1229,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
                     return;
                 }
                 const navServerUrl = config.navUrl.replace(/\/$/, '');
-                const params = request.subMenuId ? `?sub_menu_id=${request.subMenuId}` : '';
-                const resp = await fetch(`${navServerUrl}/api/cards/sections${params}`, {
+                const resp = await fetch(`${navServerUrl}/api/cards/sections`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (!resp.ok) {

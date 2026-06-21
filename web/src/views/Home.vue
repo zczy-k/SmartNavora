@@ -1119,9 +1119,9 @@ const quickAddError = ref('');
 const quickAddForm = ref({ url: '', title: '', desc: '', section: '' });
 const sectionSuggestions = ref([]);
 
-async function loadSectionSuggestions(subMenuId) {
+async function loadSectionSuggestions() {
   try {
-    const res = await getCardSections(subMenuId || null);
+    const res = await getCardSections();
     sectionSuggestions.value = res.data || [];
   } catch {
     sectionSuggestions.value = [];
@@ -1136,7 +1136,7 @@ const batchSectionLoading = ref(false);
 function openBatchSectionModal() {
   batchSectionValue.value = '';
   showBatchSectionModal.value = true;
-  loadSectionSuggestions(activeSubMenu.value?.id);
+  loadSectionSuggestions();
 }
 
 async function applyBatchSectionToSelected() {
@@ -2874,7 +2874,7 @@ function openQuickAddModal() {
     quickAddForm.value = { url: '', title: '', desc: '', section: '' };
     quickAddError.value = '';
     showQuickAddModal.value = true;
-    loadSectionSuggestions(activeSubMenu.value?.id);
+    loadSectionSuggestions();
   });
 }
 
@@ -4364,7 +4364,7 @@ async function handleEditCard(card) {
   };
   editError.value = '';
   showEditCardModal.value = true;
-  loadSectionSuggestions(card.sub_menu_id || activeSubMenu.value?.id);
+  loadSectionSuggestions();
   
   // 刷新 AI 配置状态（确保最新）
   checkAIConfig();
