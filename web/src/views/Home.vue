@@ -1594,9 +1594,6 @@ onMounted(async () => {
       if (data.cards) {
         cards.value = data.cards;
       }
-      if (data.tags) {
-        allTags.value = data.tags;
-      }
       if (data.promos) {
         leftPromos.value = data.promos.filter(item => item.position === 'left');
         rightPromos.value = data.promos.filter(item => item.position === 'right');
@@ -2907,7 +2904,6 @@ async function parseUrls() {
         } : null,
         currentPath: extractPathname(card.url),
         urlPreview: formatUrlPreview(card.url),
-        tagIds: recommendedTagIds,
         recommendedTagIds: recommendedTagIds
       };
     });
@@ -2920,45 +2916,23 @@ async function parseUrls() {
   }
 }
 
-// 切换批量卡片的标签
-function toggleBatchCardTag(card, tagId) {
-  if (!card.tagIds) {
-    card.tagIds = [];
-  }
-  const index = card.tagIds.indexOf(tagId);
-  if (index > -1) {
-    card.tagIds.splice(index, 1);
-  } else {
-    card.tagIds.push(tagId);
-  }
-}
-
-// 获取非推荐的其他标签
-function getOtherTags(card) {
-  if (!card.recommendedTagIds || card.recommendedTagIds.length === 0) {
-    return allTags.value;
-  }
-  return allTags.value.filter(tag => !card.recommendedTagIds.includes(tag.id));
-}
-
 async function addSelectedCards() {
   const selected = parsedCards.value.filter(card => card.selected);
-  
+
   if (selected.length === 0) {
     batchError.value = '请至少选择一个网站';
     return;
   }
-  
+
   batchLoading.value = true;
   batchError.value = '';
-  
+
   try {
     const cardsToAdd = selected.map(card => ({
       title: card.title,
       url: card.url,
       logo: card.logo,
-      description: card.description,
-      tagIds: card.tagIds || [] // 包含标签
+      description: card.description
     }));
     
     const response = await batchAddCards(
@@ -3018,9 +2992,8 @@ async function autoGenerateAIForNewCards(cardIds) {
     }
     
     // 显示进度提示
-    showToastMessage('🤖 AI 正在自动生成名称、描述和标签...', 'info', 0);
-    
-    const existingTags = allTags.value.map(t => t.name);
+    showToastMessage('🤖 AI 正在自动生成名称和描述...', 'info', 0);
+
     const delay = configRes.data.config.requestDelay || 1500;
     let successCount = 0;
     
@@ -3054,21 +3027,7 @@ async function autoGenerateAIForNewCards(cardIds) {
           if (Object.keys(updates).length > 0) {
             await api.put(`/api/cards/${cardId}`, updates);
           }
-          
-          // 更新标签
-          if (genRes.data.tags) {
-            const allTagNames = [
-              ...(genRes.data.tags.tags || []),
-              ...(genRes.data.tags.newTags || [])
-            ];
-            if (allTagNames.length > 0) {
-              await api.post('/api/ai/update-tags', {
-                cardId: cardId,
-                tags: allTagNames
-              });
-            }
-          }
-          
+
           successCount++;
         }
         
@@ -4034,8 +3993,7 @@ async function moveCardToCategory(menuId, subMenuId) {
         url: card.url,
         logo_url: card.logo_url,
         desc: card.desc,
-        order: card.order || 0,
-        tagIds: card.tags ? card.tags.map(t => t.id) : []
+        order: card.order || 0
       };
       
       try {
@@ -4168,77 +4126,10 @@ function closeEditCardModal() {
     title: '',
     url: '',
     logo_url: '',
-    desc: '',
-    tagIds: []
+    desc: ''
   };
-  tagSearchQuery.value = '';
-  showQuickAddTag.value = false;
   quickTagName.value = '';
   quickTagColor.value = '#1890ff';
-}
-
-// 标签相关辅助方法
-function getTagById(tagId) {
-  return allTags.value.find(t => t.id === tagId);
-}
-
-function addTag(tagId) {
-  if (!cardEditForm.value.tagIds.includes(tagId)) {
-    cardEditForm.value.tagIds.push(tagId);
-  }
-}
-
-function removeTag(tagId) {
-  const index = cardEditForm.value.tagIds.indexOf(tagId);
-  if (index > -1) {
-    cardEditForm.value.tagIds.splice(index, 1);
-  }
-}
-
-const availableTagsForEdit = computed(() => {
-  return allTags.value.filter(tag => !cardEditForm.value.tagIds.includes(tag.id));
-});
-
-// 过滤后的可用标签（支持搜索）
-const filteredAvailableTags = computed(() => {
-  const query = tagSearchQuery.value.trim().toLowerCase();
-  if (!query) return availableTagsForEdit.value;
-  return availableTagsForEdit.value.filter(tag => 
-    tag.name.toLowerCase().includes(query)
-  );
-});
-
-// 快速创建标签
-async function createQuickTag() {
-  const name = quickTagName.value.trim();
-  if (!name) return;
-  
-  try {
-    const { addTag: apiAddTag } = await import('../api');
-    const maxOrder = allTags.value.length
-      ? Math.max(...allTags.value.map(t => t.order || 0))
-      : 0;
-    
-    const res = await apiAddTag({
-      name: name,
-      color: quickTagColor.value,
-      order: maxOrder + 1
-    });
-    
-    // 添加到标签列表
-    const newTag = res.data;
-    allTags.value.push(newTag);
-    
-    // 自动选中新创建的标签
-    cardEditForm.value.tagIds.push(newTag.id);
-    
-    // 重置表单
-    quickTagName.value = '';
-    quickTagColor.value = '#1890ff';
-    showQuickAddTag.value = false;
-  } catch (err) {
-    alert('创建标签失败：' + (err.response?.data?.error || err.message));
-  }
 }
 
 function getFriendlyAIErrorMessage(err) {
@@ -4356,72 +4247,6 @@ async function generateAIDescription() {
   }
 }
 
-// AI 推荐标签
-async function generateAITags() {
-  if (!cardEditForm.value.url) {
-    showToastMessage('请先输入网址', 'error');
-    return;
-  }
-  
-  aiGeneratingTags.value = true;
-  try {
-    const existingTags = allTags.value.map(t => t.name);
-    const res = await api.post('/api/ai/generate', {
-      type: 'tags',
-      card: {
-        title: cardEditForm.value.title || '',
-        url: cardEditForm.value.url,
-        desc: cardEditForm.value.desc || ''
-      },
-      existingTags
-    });
-    
-    if (res.data.success && res.data.tags) {
-      const { tags: recommendedTags, newTags } = res.data.tags;
-      
-      // 添加推荐的现有标签
-      for (const tagName of recommendedTags) {
-        const tag = allTags.value.find(t => t.name === tagName);
-        if (tag && !cardEditForm.value.tagIds.includes(tag.id)) {
-          cardEditForm.value.tagIds.push(tag.id);
-        }
-      }
-      
-        // 先刷新标签列表，避免创建重复标签导致400错误
-          const tagsRes = await api.get('/api/tags');
-          allTags.value = tagsRes.data;
-          
-          // 创建并添加新标签
-          for (const tagName of newTags) {
-            const existingTag = allTags.value.find(t => t.name.toLowerCase() === tagName.toLowerCase());
-            if (existingTag) {
-              if (!cardEditForm.value.tagIds.includes(existingTag.id)) {
-                cardEditForm.value.tagIds.push(existingTag.id);
-              }
-            } else {
-              try {
-                const createRes = await api.post('/api/tags', { name: tagName });
-                if (createRes.data && createRes.data.id) {
-                  allTags.value.push(createRes.data);
-                  cardEditForm.value.tagIds.push(createRes.data.id);
-                }
-              } catch (e) {
-                console.warn('创建标签失败:', tagName, e);
-              }
-            }
-          }
-      
-      showToastMessage('标签推荐成功', 'success');
-    } else {
-      showToastMessage(res.data.message || 'AI 推荐失败', 'error');
-    }
-  } catch (err) {
-    showToastMessage(getFriendlyAIErrorMessage(err), 'error');
-  } finally {
-    aiGeneratingTags.value = false;
-  }
-}
-
 // 保存卡片编辑
 async function saveCardEdit() {
   if (!cardEditForm.value.title.trim()) {
@@ -4462,24 +4287,21 @@ async function saveCardEdit() {
         // 更新 allCards（用于搜索）
         const cardIndex = allCards.value.findIndex(c => c.id === cardId);
         if (cardIndex > -1) {
-          const updatedTags = cardEditForm.value.tagIds.map(id => allTags.value.find(t => t.id === id)).filter(Boolean);
-          allCards.value = allCards.value.map(c => 
-            c.id === cardId ? { ...c, ...updatedData, tags: updatedTags } : c
+          allCards.value = allCards.value.map(c =>
+            c.id === cardId ? { ...c, ...updatedData } : c
           );
         }
 
-        const updatedTags = cardEditForm.value.tagIds.map(id => allTags.value.find(t => t.id === id)).filter(Boolean);
         syncCurrentCardLists(list => list.map(c =>
           c.id === cardId
-            ? { ...c, ...updatedData, tags: updatedTags }
+            ? { ...c, ...updatedData }
             : c
         ));
         
         // 更新 selectedCards
         selectedCards.value = selectedCards.value.map(c => {
           if (c.id === cardId) {
-            const updatedTags = cardEditForm.value.tagIds.map(id => allTags.value.find(t => t.id === id)).filter(Boolean);
-            return { ...c, ...updatedData, tags: updatedTags };
+            return { ...c, ...updatedData };
           }
           return c;
         });
