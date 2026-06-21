@@ -1589,6 +1589,15 @@ router.post('/test', authMiddleware, async (req, res) => {
     const probeResult = await probeBaseUrl(config);
     
     if (probeResult.success) {
+      // 如果探测返回 401/403，说明 URL 可达但 API Key 无效
+      if (probeResult.status === 401 || probeResult.status === 403) {
+        await db.saveAIConfig({ lastTestedOk: 'false' });
+        return res.status(401).json({
+          success: false,
+          message: 'Base URL 连接成功，但 API Key 无效或已过期，请检查并重新配置'
+        });
+      }
+
       // 测试成功，持久化状态
       await db.saveAIConfig({ lastTestedOk: 'true' });
       
