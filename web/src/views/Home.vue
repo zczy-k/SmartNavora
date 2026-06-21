@@ -286,6 +286,7 @@
                     @openMovePanel="openMovePanel"
                     @requireAuth="handleRequireAuth"
                     @cardClicked="handleCardClicked"
+                    @quickAdd="openQuickAddModal"
                     @click.stop
                   />
                 </template>
@@ -319,6 +320,7 @@
           @openMovePanel="openMovePanel"
           @requireAuth="handleRequireAuth"
           @cardClicked="handleCardClicked"
+          @quickAdd="openQuickAddModal"
           @click.stop
         />
       </template>
@@ -410,6 +412,11 @@
           <!-- 步骤 3: 预览选择 -->
           <div v-if="batchStep === 3" class="batch-step">
             <p class="batch-tip">请选择需要添加的网站：</p>
+            <div class="batch-section-bar">
+              <label>统一分组：</label>
+              <input type="text" v-model="batchSection" class="batch-section-input" placeholder="为所有选中卡片设置同一分组（可选）" @change="applyBatchSection" />
+              <button v-if="batchSection" class="btn sm" @click="applyBatchSection">应用到全部</button>
+            </div>
             <div class="batch-preview-list">
               <div
                 v-for="(item, index) in parsedCards"
@@ -449,6 +456,10 @@
                     <div class="batch-edit-field">
                       <label>描述：</label>
                       <textarea v-model="item.description" class="batch-edit-textarea" rows="2"></textarea>
+                    </div>
+                    <div class="batch-edit-field">
+                      <label>分组：</label>
+                      <input type="text" v-model="item.section" class="batch-edit-input" placeholder="可选，如：AI 工具、开发环境" />
                     </div>
                     <p class="batch-card-url">{{ item.url }}</p>
                     <p v-if="!item.success" class="batch-card-warning">⚠️ {{ item.error }}</p>
@@ -747,7 +758,42 @@
         </div>
       </div>
     </div>
-    
+
+    <!-- 快速添加卡片弹窗 -->
+    <div v-if="showQuickAddModal" class="modal-overlay" @click="showQuickAddModal = false">
+      <div class="modal-content quick-add-modal" @click.stop>
+        <div class="modal-header">
+          <h3>添加卡片</h3>
+          <button class="close-btn" @click="showQuickAddModal = false">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>网址 <span style="color: #ef4444;">*</span></label>
+            <input v-model="quickAddForm.url" placeholder="https://example.com" class="batch-input" @keyup.enter="saveQuickAdd" />
+          </div>
+          <div class="form-group">
+            <label>标题</label>
+            <input v-model="quickAddForm.title" placeholder="留空则自动获取" class="batch-input" />
+          </div>
+          <div class="form-group">
+            <label>描述</label>
+            <textarea v-model="quickAddForm.desc" placeholder="留空则 AI 自动生成" class="batch-textarea" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label>分组 <span class="field-hint">（可选，用于在子菜单内分类）</span></label>
+            <input v-model="quickAddForm.section" placeholder="例如：AI 工具、开发环境" class="batch-input" />
+          </div>
+          <p v-if="quickAddError" class="batch-error">{{ quickAddError }}</p>
+          <div class="batch-actions" style="margin-top: 16px;">
+            <button @click="showQuickAddModal = false" class="btn btn-cancel">取消</button>
+            <button @click="saveQuickAdd" class="btn btn-primary" :disabled="quickAddLoading">
+              {{ quickAddLoading ? '添加中...' : '添加' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 添加搜索引擎弹窗 -->
     <div v-if="showAddEngineModal" class="modal-overlay">
       <div class="modal-content" @click.stop>
@@ -897,7 +943,7 @@
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch } from 'vue';
-import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, instance as apiInstance } from '../api';
+import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, instance as apiInstance } from '../api';
 
 // AI API 调用（使用 api.js 的 instance 以确保全局 401 拦截器生效）
 const api = {
@@ -1027,6 +1073,13 @@ const batchStep = ref(1); // 1:密码验证 2:输入网址 3:预览选择
 const batchPassword = ref('');
 const batchUrls = ref('');
 const batchLoading = ref(false);
+const batchSection = ref('');
+
+// 快速添加卡片相关状态
+const showQuickAddModal = ref(false);
+const quickAddLoading = ref(false);
+const quickAddError = ref('');
+const quickAddForm = ref({ url: '', title: '', desc: '', section: '' });
 const batchError = ref('');
 const parsedCards = ref([]);
 const rememberPassword = ref(false);
@@ -2714,8 +2767,69 @@ function closeBatchAdd() {
   batchPassword.value = '';
   batchUrls.value = '';
   batchError.value = '';
+  batchSection.value = '';
   parsedCards.value = [];
   batchLoading.value = false;
+}
+
+// 快速添加卡片
+function openQuickAddModal() {
+  requireAuth(() => {
+    quickAddForm.value = { url: '', title: '', desc: '', section: '' };
+    quickAddError.value = '';
+    showQuickAddModal.value = true;
+  });
+}
+
+async function saveQuickAdd() {
+  const url = quickAddForm.value.url.trim();
+  if (!url) {
+    quickAddError.value = '请输入网址';
+    return;
+  }
+
+  quickAddLoading.value = true;
+  quickAddError.value = '';
+
+  try {
+    const menuId = activeMenu.value?.id;
+    const subMenuId = activeSubMenu.value?.id || null;
+
+    if (!menuId) {
+      quickAddError.value = '请先选择一个菜单分类';
+      quickAddLoading.value = false;
+      return;
+    }
+
+    await addCard({
+      menu_id: menuId,
+      sub_menu_id: subMenuId,
+      title: quickAddForm.value.title.trim() || url,
+      url: url,
+      logo_url: '',
+      desc: quickAddForm.value.desc.trim(),
+      section: quickAddForm.value.section.trim()
+    });
+
+    showQuickAddModal.value = false;
+    showToastMessage('卡片添加成功', 'success');
+
+    // 重新加载卡片
+    await loadCards(true);
+
+    // 如果标题为空，触发 AI 自动生成
+    if (!quickAddForm.value.title.trim()) {
+      const allCardsList = cards.value || [];
+      const newCard = allCardsList.find(c => c.url === url);
+      if (newCard) {
+        autoGenerateAIForNewCards([newCard.id]);
+      }
+    }
+  } catch (err) {
+    quickAddError.value = err.response?.data?.error || err.message || '添加失败';
+  } finally {
+    quickAddLoading.value = false;
+  }
 }
 
 // 检查保存的密码（信任设备模式）
@@ -2956,6 +3070,13 @@ async function parseUrls() {
   }
 }
 
+function applyBatchSection() {
+  const sec = batchSection.value.trim();
+  parsedCards.value.forEach(card => {
+    if (card.selected) card.section = sec;
+  });
+}
+
 async function addSelectedCards() {
   const selected = parsedCards.value.filter(card => card.selected);
 
@@ -2972,7 +3093,8 @@ async function addSelectedCards() {
       title: card.title,
       url: card.url,
       logo: card.logo,
-      description: card.description
+      description: card.description,
+      section: card.section || ''
     }));
     
     const response = await batchAddCards(
@@ -7507,6 +7629,42 @@ async function saveCardEdit() {
   font-weight: 400;
   font-size: 12px;
   color: rgba(255, 255, 255, 0.45);
+}
+
+/* 批量添加 - 统一分组栏 */
+.batch-section-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.batch-section-bar label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+}
+
+.batch-section-input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+}
+
+.batch-section-input:focus {
+  border-color: rgba(99, 179, 237, 0.5);
+}
+
+.batch-section-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
 }
 
 .group-header-left {

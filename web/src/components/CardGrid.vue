@@ -41,6 +41,11 @@
            class="context-menu"
            :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
            @click.stop>
+        <div class="context-menu-item" @click="$emit('quickAdd')">
+          <span class="context-menu-icon">➕</span>
+          <span>添加卡片</span>
+        </div>
+        <div class="context-menu-divider"></div>
         <div class="context-menu-item" @click="onContextEdit">
           <span class="context-menu-icon">✏️</span>
           <span>编辑</span>
@@ -85,12 +90,13 @@ const props = defineProps({
 });
 
 const emit = defineEmits([
-  'contextEdit', 
+  'contextEdit',
   'contextDelete',
   'toggleCardSelection',
   'openMovePanel',
   'requireAuth',
-  'cardClicked'
+  'cardClicked',
+  'quickAdd'
 ]);
 
 const cardGridRef = ref(null);
