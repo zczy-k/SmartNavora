@@ -133,6 +133,11 @@ export function filterCardsWithPinyin(cards, searchQuery) {
     if (card.desc && matchWithPinyin(card.desc, queryLower)) {
       return true;
     }
+
+    // 匹配分组名称
+    if (card.section && matchWithPinyin(card.section, queryLower)) {
+      return true;
+    }
     
     // 匹配标签名称
     if (card.tags && card.tags.length > 0) {

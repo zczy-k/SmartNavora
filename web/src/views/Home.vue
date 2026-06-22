@@ -1013,7 +1013,7 @@ import { getDuplicateMatch, extractPathname, formatUrlPreview, isMultiPathDomain
 const CardGrid = defineAsyncComponent(() => import('../components/CardGrid.vue'));
 
 const mobileDrawerVisible = ref(false);
-const collapsedGroups = ref(new Set());
+const collapsedGroups = ref(new Set(JSON.parse(localStorage.getItem('collapsedGroups') || '[]')));
 
 const menus = ref([]);
 const activeMenu = ref(null);
@@ -2469,6 +2469,7 @@ function toggleGroupCollapse(groupKey) {
     newSet.add(groupKey);
   }
   collapsedGroups.value = newSet;
+  localStorage.setItem('collapsedGroups', JSON.stringify([...newSet]));
 }
 
 function isGroupCollapsed(groupKey) {
