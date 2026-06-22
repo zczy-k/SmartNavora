@@ -89,8 +89,6 @@ docker compose up -d
 ```
 
 **方式二：Docker Run**
-
-**方式三：Docker Run**
 ```bash
 docker run -d \
   --name SmartNavora \
