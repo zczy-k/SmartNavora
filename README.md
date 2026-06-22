@@ -68,19 +68,15 @@ services:
     ports:
       - "3000:3000"
     environment:
-      PORT: "3000"
-      NODE_ENV: production
-      ADMIN_USERNAME: admin
       ADMIN_PASSWORD: 123456
-      JWT_SECRET: change-this-secret
-      CRYPTO_SECRET: change-this-too
-      AUTO_BACKUP_ENABLED: "true"
     volumes:
       - ./database:/app/database
       - ./backups:/app/backups
       - ./config:/app/config
     restart: unless-stopped
 ```
+
+> 如需自定义 JWT 密钥、加密密钥等高级选项，参考 [完整配置示例](docker-compose.yml)
 
 ```bash
 # 在 docker-compose.yml 同级目录下执行
