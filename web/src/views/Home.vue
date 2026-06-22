@@ -283,6 +283,13 @@
           @click.stop
         />
       </div>
+      <!-- 加载中的骨架屏，避免空白闪烁 -->
+      <div v-else-if="isFrequentLoading" class="frequent-skeleton">
+        <div v-for="i in 8" :key="i" class="skeleton-card">
+          <div class="skeleton-icon"></div>
+          <div class="skeleton-text"></div>
+        </div>
+      </div>
       <div v-else class="frequent-empty-state">
         <span class="frequent-empty-icon">🔥</span>
         <p>还没有使用记录</p>
@@ -1060,6 +1067,7 @@ let searchDebounceTimer = null;
 // 常用视图状态
 const isFrequentView = ref(false);
 const frequentCards = ref([]);
+const isFrequentLoading = ref(false);
 
 function filterCardsByActiveCriteria(cardList, keyword = debouncedSearchQuery.value.trim()) {
   let result = Array.isArray(cardList) ? [...cardList] : [];
@@ -1891,6 +1899,8 @@ onMounted(async () => {
       if (data.cards) {
         cards.value = data.cards;
       }
+      // 从缓存恢复常用卡片
+      loadFrequentCardsFromCache();
       if (data.promos) {
         leftPromos.value = data.promos.filter(item => item.position === 'left');
         rightPromos.value = data.promos.filter(item => item.position === 'right');
@@ -1986,15 +1996,18 @@ onMounted(async () => {
     // 缓存读取失败，忽略
   }
   
-  // ========== 后台加载最新数据 ==========
-  const menusRes = await Promise.resolve(getMenus()).then(
-    value => ({ status: 'fulfilled', value }),
-    reason => ({ status: 'rejected', reason })
-  );
-  
+  // ========== 后台加载最新数据（并行化：菜单和常用卡片同时加载）==========
+  const [menusRes] = await Promise.all([
+    Promise.resolve(getMenus()).then(
+      value => ({ status: 'fulfilled', value }),
+      reason => ({ status: 'rejected', reason })
+    ),
+    loadFrequentCards().catch(() => {})
+  ]);
+
   // 准备缓存数据
   const cacheData = { menus: null, cards: null, tags: null, ads: null, friends: null, engines: null };
-  
+
   // 处理菜单数据（优先级最高）
   if (menusRes.status === 'fulfilled') {
     menus.value = menusRes.value.data;
@@ -2003,13 +2016,11 @@ onMounted(async () => {
       if (!cacheUsed) {
         isFrequentView.value = true;
       }
-      await loadFrequentCards();
       cacheData.cards = cards.value;
-      deferredSearchTimer = setTimeout(() => {
-        if (document.visibilityState === 'visible') {
-          loadAllCardsForSearch().catch(() => {});
-        }
-      }, 300);
+      // 立即预加载所有分类的卡片到缓存，实现菜单切换秒开
+      if (document.visibilityState === 'visible') {
+        loadAllCardsForSearch().catch(() => {});
+      }
     }
   }
   deferredDataTimer = setTimeout(() => {
@@ -2496,14 +2507,45 @@ async function handleSelectFrequent() {
   await loadFrequentCards();
 }
 
+// 常用卡片缓存
+const FREQUENT_CACHE_KEY = 'nav_frequent_cache';
+const FREQUENT_CACHE_TTL = 5 * 60 * 1000;
+
+// 从缓存加载常用卡片
+function loadFrequentCardsFromCache() {
+  try {
+    const cached = localStorage.getItem(FREQUENT_CACHE_KEY);
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < FREQUENT_CACHE_TTL && Array.isArray(data) && data.length > 0) {
+        frequentCards.value = data;
+        return true;
+      }
+    }
+  } catch (e) { }
+  return false;
+}
+
 // 加载常用卡片
 async function loadFrequentCards() {
+  isFrequentLoading.value = true;
   try {
     const { data } = await getFrequentCards(20);
     frequentCards.value = data;
+    // 写入缓存，下次秒开
+    try {
+      localStorage.setItem(FREQUENT_CACHE_KEY, JSON.stringify({
+        data,
+        timestamp: Date.now()
+      }));
+    } catch (e) { }
   } catch (err) {
     console.warn('加载常用卡片失败:', err);
-    frequentCards.value = [];
+    if (frequentCards.value.length === 0) {
+      loadFrequentCardsFromCache();
+    }
+  } finally {
+    isFrequentLoading.value = false;
   }
 }
 
@@ -7722,6 +7764,82 @@ async function saveCardEdit() {
 .frequent-empty-hint {
   font-size: 13px !important;
   color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* 常用视图骨架屏 */
+.frequent-skeleton {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 18px;
+  max-width: 68rem;
+  margin: 2.5vh auto 0;
+  padding: 0 1rem;
+}
+
+@media (max-width: 1400px) {
+  .frequent-skeleton { grid-template-columns: repeat(7, 1fr); max-width: 60rem; }
+}
+@media (max-width: 1200px) {
+  .frequent-skeleton { grid-template-columns: repeat(6, 1fr); max-width: 52rem; }
+}
+@media (max-width: 1024px) {
+  .frequent-skeleton { grid-template-columns: repeat(5, 1fr); max-width: 46rem; }
+}
+@media (max-width: 900px) {
+  .frequent-skeleton { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 768px) {
+  .frequent-skeleton { grid-template-columns: repeat(3, 1fr); gap: 14px; padding: 0 16px; }
+}
+@media (max-width: 480px) {
+  .frequent-skeleton { grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 0 12px; }
+}
+
+.skeleton-card {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  min-height: 92px;
+  height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  animation: skeletonShimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.skeleton-text {
+  width: 60px;
+  height: 12px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@keyframes skeletonShimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 /* ========== 编辑模式分类视图样式 ========== */

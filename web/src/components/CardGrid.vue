@@ -6,6 +6,7 @@
              'selected': isCardSelected(card)
            }"
            :data-card-id="card.id"
+           :style="{ '--card-index': index }"
            draggable="false"
            @contextmenu.prevent="handleContextMenu($event, card)"
            @click="handleCardClick($event, card)"
@@ -506,6 +507,8 @@ function isCardSelected(card) {
   -webkit-user-drag: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  animation: cardFadeIn 0.35s ease both;
+  animation-delay: calc(var(--card-index, 0) * 25ms);
 }
 
 .link-item:hover {
@@ -707,6 +710,17 @@ function isCardSelected(card) {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes cardFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
