@@ -92,10 +92,7 @@ docker run -d \
   -v $(pwd)/database:/app/database \
   -v $(pwd)/backups:/app/backups \
   -v $(pwd)/config:/app/config \
-  -e ADMIN_USERNAME=admin \
   -e ADMIN_PASSWORD=123456 \
-  -e JWT_SECRET=your-jwt-secret \
-  -e CRYPTO_SECRET=your-crypto-secret \
   --restart unless-stopped \
   ghcr.io/zczy-k/smartnavora:latest
 ```
