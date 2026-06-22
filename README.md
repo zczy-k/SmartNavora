@@ -58,13 +58,21 @@ bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/script
 
 **方式一：Docker Compose（推荐）**
 ```bash
+# 从 GitHub 直接拉取 compose 文件并启动（无需克隆整个仓库）
+curl -sL https://raw.githubusercontent.com/zczy-k/SmartNavora/main/docker-compose.yml -o docker-compose.yml
+docker compose pull
+docker compose up -d
+```
+
+**方式二：Docker Compose（从仓库启动）**
+```bash
 git clone https://github.com/zczy-k/SmartNavora.git
 cd SmartNavora
 docker compose pull
 docker compose up -d
 ```
 
-**方式二：Docker Run**
+**方式三：Docker Run**
 ```bash
 docker run -d \
   --name SmartNavora \
