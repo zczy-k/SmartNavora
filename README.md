@@ -57,20 +57,38 @@ bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/script
 ### Docker 部署
 
 **方式一：Docker Compose（推荐）**
+
+创建 `docker-compose.yml`，粘贴以下内容：
+
+```yaml
+services:
+  SmartNavora:
+    image: ghcr.io/zczy-k/smartnavora:latest
+    container_name: SmartNavora
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      NODE_ENV: production
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: 123456
+      JWT_SECRET: change-this-secret
+      CRYPTO_SECRET: change-this-too
+      AUTO_BACKUP_ENABLED: "true"
+    volumes:
+      - ./database:/app/database
+      - ./backups:/app/backups
+      - ./config:/app/config
+    restart: unless-stopped
+```
+
 ```bash
-# 从 GitHub 直接拉取 compose 文件并启动（无需克隆整个仓库）
-curl -sL https://raw.githubusercontent.com/zczy-k/SmartNavora/main/docker-compose.yml -o docker-compose.yml
+# 在 docker-compose.yml 同级目录下执行
 docker compose pull
 docker compose up -d
 ```
 
-**方式二：Docker Compose（从仓库启动）**
-```bash
-git clone https://github.com/zczy-k/SmartNavora.git
-cd SmartNavora
-docker compose pull
-docker compose up -d
-```
+**方式二：Docker Run**
 
 **方式三：Docker Run**
 ```bash
