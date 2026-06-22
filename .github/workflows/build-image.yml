@@ -10,7 +10,7 @@ on:
       - 'db.js'
       - 'package.json'
       - 'start-with-https.js'
-      - 'check-password.js'
+      - 'scripts/check-password.js'
       - 'web/**'
       - 'public/**'
       - 'routes/**'

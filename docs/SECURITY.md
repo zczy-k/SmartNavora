@@ -67,7 +67,7 @@
 **风险描述**
 ```bash
 # 不安全：密码会出现在进程列表中
-node check-password.js reset mypassword123
+node scripts/check-password.js reset mypassword123
 ```
 
 其他用户可以通过 `ps aux` 看到密码。
@@ -75,7 +75,7 @@ node check-password.js reset mypassword123
 **缓解措施**
 1. 使用交互式模式（推荐）
 ```bash
-node check-password.js interactive
+node scripts/check-password.js interactive
 ```
 
 2. 使用后清除历史

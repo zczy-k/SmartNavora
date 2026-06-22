@@ -192,7 +192,7 @@ node scripts/check-password.js check
 💡 提示:
    - ADMIN_PASSWORD 环境变量仅在首次初始化数据库时生效
    - 如果数据库已存在，环境变量不会覆盖数据库中的密码
-   - 要重置密码，请使用: node check-password.js reset <新密码>
+   - 要重置密码，请使用: node scripts/check-password.js reset <新密码>
    - 或者在前端管理界面修改密码
 
 ⚠️  当前密码是默认密码: 123456
