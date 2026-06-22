@@ -34,6 +34,9 @@
         <div v-if="hoveredCardId === card.id && !selectionMode && card.desc" class="card-tooltip">
           <div class="tooltip-content">{{ getTooltip(card) }}</div>
         </div>
+        <div v-if="showSource && (card.menu_name || card.sub_menu_name)" class="card-source-tag" @click.stop>
+          {{ card.sub_menu_name ? card.menu_name + ' › ' + card.sub_menu_name : card.menu_name }}
+        </div>
       </div>
     
     <Teleport to="body">
@@ -81,12 +84,13 @@
 import { ref, onUnmounted, watch } from 'vue';
 import { useIconLoader } from '../composables/useIconLoader';
 
-const props = defineProps({ 
+const props = defineProps({
   cards: Array,
   selectedCards: Array,
   categoryId: Number,
   subCategoryId: [Number, null],
-  selectionMode: Boolean
+  selectionMode: Boolean,
+  showSource: Boolean
 });
 
 const emit = defineEmits([
@@ -730,5 +734,22 @@ function isCardSelected(card) {
   height: 1px;
   background: rgba(0, 0, 0, 0.08);
   margin: 4px 0;
+}
+
+.card-source-tag {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  max-width: 90%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 </style>

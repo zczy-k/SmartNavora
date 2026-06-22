@@ -21,11 +21,13 @@
     />
     
     <div class="menu-bar-fixed">
-      <MenuBar 
-        :menus="menus" 
-        :activeId="activeMenu?.id" 
+      <MenuBar
+        :menus="menus"
+        :activeId="activeMenu?.id"
         :activeSubMenuId="activeSubMenu?.id"
+        :isFrequentActive="isFrequentView"
         @select="selectMenu"
+        @selectFrequent="handleSelectFrequent"
         @addMenu="handleAddMenu"
         @editMenu="handleEditMenu"
         @deleteMenu="handleDeleteMenuWithAuth"
@@ -256,7 +258,38 @@
         </div>
       </div>
     </div>
-    
+
+    <!-- 常用视图 -->
+    <div class="cards-single-container" v-if="isFrequentView">
+      <div class="card-group-header single-header">
+        <div class="group-header-left">
+          <span class="group-name">🔥 常用站点</span>
+          <span class="group-count">{{ frequentCards.length }}</span>
+        </div>
+      </div>
+      <div v-if="frequentCards.length > 0">
+        <CardGrid
+          :cards="frequentCards"
+          :selectedCards="selectedCards"
+          :selectionMode="selectedCards.length > 0"
+          :showSource="true"
+          @contextEdit="handleContextEdit"
+          @contextDelete="handleContextDelete"
+          @toggleCardSelection="handleToggleCardSelection"
+          @openMovePanel="openMovePanel"
+          @requireAuth="handleRequireAuth"
+          @cardClicked="handleCardClicked"
+          @quickAdd="openQuickAddModal"
+          @click.stop
+        />
+      </div>
+      <div v-else class="frequent-empty-state">
+        <span class="frequent-empty-icon">🔥</span>
+        <p>还没有使用记录</p>
+        <p class="frequent-empty-hint">点击卡片访问后，常用的站点会自动出现在这里</p>
+      </div>
+    </div>
+
     <!-- 卡片按分类分组显示 -->
     <div class="cards-grouped-container" v-if="!activeSubMenu && activeMenu && groupedCards.length > 0">
       <template v-for="(group, index) in groupedCards" :key="group.key">
@@ -311,7 +344,7 @@
       </template>
     </div>
     <!-- 选择子菜单或搜索时，直接显示卡片 -->
-    <div v-else class="cards-single-container">
+    <div v-else-if="!isFrequentView" class="cards-single-container">
       <div v-if="activeMenu && sortedFilteredCards.length > 0" class="card-group-header single-header">
         <div class="group-header-left">
           <span class="group-name">{{ activeSubMenu?.name || activeMenu?.name || '搜索结果' }}</span>
@@ -998,7 +1031,7 @@
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch } from 'vue';
-import { getMenus, getCards, getAllCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, getCardSections, instance as apiInstance } from '../api';
+import { getMenus, getCards, getAllCards, getFrequentCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, getCardSections, instance as apiInstance } from '../api';
 
 // AI API 调用（使用 api.js 的 instance 以确保全局 401 拦截器生效）
 const api = {
@@ -1023,6 +1056,10 @@ const allCards = ref([]); // 存储所有菜单的卡片，用于搜索
 const searchQuery = ref('');
 const debouncedSearchQuery = ref('');
 let searchDebounceTimer = null;
+
+// 常用视图状态
+const isFrequentView = ref(false);
+const frequentCards = ref([]);
 
 function filterCardsByActiveCriteria(cardList, keyword = debouncedSearchQuery.value.trim()) {
   let result = Array.isArray(cardList) ? [...cardList] : [];
@@ -2430,6 +2467,7 @@ function handleContainerClick(event) {
   }
 
 async function selectMenu(menu, parentMenu = null) {
+  isFrequentView.value = false;
   if (parentMenu) {
     activeMenu.value = parentMenu;
     activeSubMenu.value = menu;
@@ -2449,13 +2487,35 @@ async function selectMenu(menu, parentMenu = null) {
   preloadAdjacentCategories();
 }
 
+// 切换到常用视图
+async function handleSelectFrequent() {
+  isFrequentView.value = true;
+  activeMenu.value = null;
+  activeSubMenu.value = null;
+  searchQuery.value = '';
+  await loadFrequentCards();
+}
+
+// 加载常用卡片
+async function loadFrequentCards() {
+  try {
+    const { data } = await getFrequentCards(20);
+    frequentCards.value = data;
+  } catch (err) {
+    console.warn('加载常用卡片失败:', err);
+    frequentCards.value = [];
+  }
+}
+
 function handleDrawerMenuSelect(menu) {
+  isFrequentView.value = false;
   activeMenu.value = menu;
   activeSubMenu.value = null;
   loadCards();
 }
 
 function handleDrawerSubMenuSelect(subMenu, parentMenu) {
+  isFrequentView.value = false;
   activeMenu.value = parentMenu;
   activeSubMenu.value = subMenu;
   loadCards();
@@ -7639,6 +7699,29 @@ async function saveCardEdit() {
 
 .progress-close-btn:hover {
   background: #40a9ff;
+}
+
+/* 常用视图空状态 */
+.frequent-empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.frequent-empty-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 16px;
+}
+
+.frequent-empty-state p {
+  margin: 8px 0;
+  font-size: 15px;
+}
+
+.frequent-empty-hint {
+  font-size: 13px !important;
+  color: rgba(255, 255, 255, 0.4) !important;
 }
 
 /* ========== 编辑模式分类视图样式 ========== */

@@ -1,7 +1,17 @@
 <template>
   <nav ref="menuBarRef" class="menu-bar">
-      <div 
-        v-for="menu in menus" 
+      <div class="menu-item frequent-menu-item">
+        <button
+          @click="$emit('selectFrequent')"
+          @contextmenu.prevent
+          :class="{active: isFrequentActive}"
+          title="常用站点"
+        >
+          🔥 常用
+        </button>
+      </div>
+      <div
+        v-for="menu in menus"
         :key="menu.id" 
         class="menu-item"
         :data-menu-id="menu.id"
@@ -95,13 +105,14 @@
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue';
 
-const props = defineProps({ 
-  menus: Array, 
+const props = defineProps({
+  menus: Array,
   activeId: Number,
-  activeSubMenuId: Number
+  activeSubMenuId: Number,
+  isFrequentActive: Boolean
 });
 
-const emit = defineEmits(['select', 'addMenu', 'editMenu', 'deleteMenu', 'addSubMenu', 'editSubMenu', 'deleteSubMenu', 'menusReordered', 'moveSubMenuUp', 'moveSubMenuDown']);
+const emit = defineEmits(['select', 'selectFrequent', 'addMenu', 'editMenu', 'deleteMenu', 'addSubMenu', 'editSubMenu', 'deleteSubMenu', 'menusReordered', 'moveSubMenuUp', 'moveSubMenuDown']);
 
 const hoveredMenuId = ref(null);
 const menuBarRef = ref(null);
@@ -456,6 +467,12 @@ onUnmounted(() => {
     font-size: 13px;
     padding: 0.45rem 0.85rem;
   }
+}
+
+.frequent-menu-item {
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
+  margin-right: 4px;
+  padding-right: 4px;
 }
 </style>
 
