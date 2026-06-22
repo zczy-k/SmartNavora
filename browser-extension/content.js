@@ -1354,14 +1354,15 @@
                       font-weight: 400;
                   }
                   .section-suggestions {
-                      position: absolute;
+                      position: relative;
                       background: #fff;
                       border: 1px solid #e2e5e8;
-                      border-radius: 6px;
+                      border-radius: 0 0 6px 6px;
+                      border-top: none;
                       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                      max-height: 200px;
+                      max-height: 180px;
                       overflow-y: auto;
-                      z-index: 100;
+                      z-index: 10;
                   }
                   .section-suggestion-item {
                       padding: 6px 10px;
@@ -1508,6 +1509,7 @@
                                       <div class="section-input-wrapper">
                                           <input type="text" class="confirm-value confirm-section-input" id="confirmSectionText" placeholder="可选，如：AI 工具、开发环境" autocomplete="off">
                                           <span class="section-dropdown-arrow" id="sectionDropdownArrow">&#9662;</span>
+                                          <div class="section-suggestions" id="sectionSuggestions" style="display:none;"></div>
                                       </div>
                                   </div>
                                   <div class="confirm-row">
@@ -1552,7 +1554,6 @@
                               <button class="btn btn-primary" id="submitBtn" disabled>下一步</button>
                           </div>
                     </div>
-                    <div class="section-suggestions" id="sectionSuggestions" style="display:none;"></div>
                 </div>
             </div>
             
@@ -1743,16 +1744,6 @@
                       const sectionInput = dialogShadowRoot.getElementById('confirmSectionText');
                       const suggestionsBox = dialogShadowRoot.getElementById('sectionSuggestions');
                       if (sectionInput && suggestionsBox) {
-                          function updateSuggestionsPosition() {
-                              const rect = sectionInput.getBoundingClientRect();
-                              const overlay = dialogShadowRoot.querySelector('.overlay');
-                              if (overlay) {
-                                  const overlayRect = overlay.getBoundingClientRect();
-                                  suggestionsBox.style.left = (rect.left - overlayRect.left) + 'px';
-                                  suggestionsBox.style.top = (rect.bottom - overlayRect.top + 2) + 'px';
-                                  suggestionsBox.style.width = rect.width + 'px';
-                              }
-                          }
                           function showSuggestions(filter) {
                               const q = (filter || '').toLowerCase();
                               const filtered = loadedSections.filter(s => !q || s.toLowerCase().includes(q));
@@ -1763,7 +1754,6 @@
                               suggestionsBox.innerHTML = filtered.map(s =>
                                   `<div class="section-suggestion-item" data-value="${escapeHtml(s)}">${escapeHtml(s)}</div>`
                               ).join('');
-                              updateSuggestionsPosition();
                               suggestionsBox.style.display = 'block';
                           }
                           sectionInput.addEventListener('focus', () => showSuggestions(sectionInput.value));
@@ -1791,13 +1781,6 @@
                           sectionInput.addEventListener('blur', () => {
                               setTimeout(() => { suggestionsBox.style.display = 'none'; }, 150);
                           });
-                          // 弹窗滚动时隐藏下拉框（位置基于输入框计算，滚动后会偏移）
-                          const scrollParent = sectionInput.closest('.dialog-body');
-                          if (scrollParent) {
-                              scrollParent.addEventListener('scroll', () => {
-                                  suggestionsBox.style.display = 'none';
-                              });
-                          }
                       }
                   });
                   checkDuplicateForConfirmation(url, customTitle);
