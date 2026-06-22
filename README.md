@@ -68,13 +68,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      PORT: "3000"
-      NODE_ENV: production
-      ADMIN_USERNAME: admin
       ADMIN_PASSWORD: 123456
-      JWT_SECRET: change-this-secret
-      CRYPTO_SECRET: change-this-too
-      AUTO_BACKUP_ENABLED: "true"
     volumes:
       - ./database:/app/database
       - ./backups:/app/backups
