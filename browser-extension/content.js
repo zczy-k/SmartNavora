@@ -1325,6 +1325,30 @@
                       border-color: #667eea;
                       box-shadow: 0 0 0 2px rgba(102,126,234,0.15);
                   }
+                  .section-input-wrapper {
+                      position: relative;
+                      flex: 1;
+                      min-width: 0;
+                  }
+                  .section-input-wrapper .confirm-section-input {
+                      padding-right: 28px;
+                      width: 100%;
+                  }
+                  .section-dropdown-arrow {
+                      position: absolute;
+                      right: 6px;
+                      top: 50%;
+                      transform: translateY(-50%);
+                      cursor: pointer;
+                      font-size: 10px;
+                      color: #999;
+                      padding: 2px 4px;
+                      user-select: none;
+                      line-height: 1;
+                  }
+                  .section-dropdown-arrow:hover {
+                      color: #667eea;
+                  }
                   .confirm-section-input::placeholder {
                       color: #aaa;
                       font-weight: 400;
@@ -1481,7 +1505,10 @@
                                   </div>
                                   <div class="confirm-row">
                                       <span class="confirm-label">分组：</span>
-                                      <input type="text" class="confirm-value confirm-section-input" id="confirmSectionText" placeholder="可选，如：AI 工具、开发环境" autocomplete="off">
+                                      <div class="section-input-wrapper">
+                                          <input type="text" class="confirm-value confirm-section-input" id="confirmSectionText" placeholder="可选，如：AI 工具、开发环境" autocomplete="off">
+                                          <span class="section-dropdown-arrow" id="sectionDropdownArrow">&#9662;</span>
+                                      </div>
                                       <div class="section-suggestions" id="sectionSuggestions" style="display:none;"></div>
                                   </div>
                                   <div class="confirm-row">
@@ -1703,12 +1730,7 @@
                   dialogShadowRoot.getElementById('confirmTitleText').value = customTitle;
                   dialogShadowRoot.getElementById('confirmCategoryText').textContent = categoryPath;
                   dialogShadowRoot.getElementById('confirmUrlText').textContent = url;
-                  // 加载上次使用的分组
-                  const sectionKey = `lastSection_${selectedMenuId}_${selectedSubMenuId || '0'}`;
-                  chrome.storage.sync.get([sectionKey], (result) => {
-                      const sectionInput = dialogShadowRoot.getElementById('confirmSectionText');
-                      if (sectionInput) sectionInput.value = result[sectionKey] || '';
-                  });
+                  dialogShadowRoot.getElementById('confirmSectionText').value = '';
                   // 加载已有分组名用于自动补全
                   let loadedSections = [];
                   chrome.runtime.sendMessage({ action: 'getSections' }, (resp) => {
@@ -1742,6 +1764,18 @@
                           }
                           sectionInput.addEventListener('focus', () => showSuggestions(sectionInput.value));
                           sectionInput.addEventListener('input', () => showSuggestions(sectionInput.value));
+                          // 下拉箭头点击：切换显示所有分组
+                          const arrowBtn = dialogShadowRoot.getElementById('sectionDropdownArrow');
+                          if (arrowBtn) {
+                              arrowBtn.addEventListener('mousedown', (e) => {
+                                  e.preventDefault();
+                                  if (suggestionsBox.style.display === 'block') {
+                                      suggestionsBox.style.display = 'none';
+                                  } else {
+                                      showSuggestions('');
+                                  }
+                              });
+                          }
                           suggestionsBox.addEventListener('mousedown', (e) => {
                               const item = e.target.closest('.section-suggestion-item');
                               if (item) {
