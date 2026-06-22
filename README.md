@@ -56,13 +56,33 @@ bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/script
 
 ### Docker 部署
 
+**方式一：Docker Compose（推荐）**
 ```bash
 git clone https://github.com/zczy-k/SmartNavora.git
 cd SmartNavora
+docker compose pull
 docker compose up -d
 ```
 
-> Docker 务必持久化挂载 `database/`、`backups/`、`config/` 三个目录。
+**方式二：Docker Run**
+```bash
+docker run -d \
+  --name SmartNavora \
+  -p 3000:3000 \
+  -v $(pwd)/database:/app/database \
+  -v $(pwd)/backups:/app/backups \
+  -v $(pwd)/config:/app/config \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_PASSWORD=123456 \
+  -e JWT_SECRET=your-jwt-secret \
+  -e CRYPTO_SECRET=your-crypto-secret \
+  --restart unless-stopped \
+  ghcr.io/zczy-k/smartnavora:latest
+```
+
+> - 务必持久化挂载 `database/`、`backups/`、`config/` 三个目录，否则容器重建会丢失数据与密钥
+> - 设置 `JWT_SECRET` 和 `CRYPTO_SECRET` 为固定值可避免重建容器后 Token 失效
+> - 健康检查端点：`/healthz`（存活）和 `/readyz`（就绪）
 
 ### Serv00 免费主机
 
