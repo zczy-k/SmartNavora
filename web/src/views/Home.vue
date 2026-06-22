@@ -316,7 +316,12 @@
 <transition name="group-collapse">
               <div v-if="!isGroupCollapsed(group.key)">
                 <template v-for="sec in groupBySection(sortAndFilterCards(group.cards, group.subMenuId))" :key="sec.section || '__default__'">
-                  <div v-if="sec.section" class="section-header">
+                  <div v-if="sec.section" class="section-header" @click="toggleSectionCollapse(sec.section, group.subMenuId)">
+                    <button class="collapse-btn section-collapse-btn" :class="{ collapsed: isSectionCollapsed(sec.section, group.subMenuId) }">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </button>
                     <span v-if="editingSection !== sec.section" class="section-title" @dblclick.stop="startEditSection(sec.section, group.subMenuId)" title="双击重命名分组">
                       {{ sec.section }}
                       <svg class="section-edit-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
@@ -329,21 +334,25 @@
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                     </button>
                   </div>
-                  <CardGrid
-                    :cards="sec.cards"
-                    :selectedCards="selectedCards"
-                    :selectionMode="selectedCards.length > 0"
-                    :categoryId="activeMenu?.id"
-                    :subCategoryId="group.subMenuId"
-                    @contextEdit="handleContextEdit"
-                    @contextDelete="handleContextDelete"
-                    @toggleCardSelection="handleToggleCardSelection"
-                    @openMovePanel="openMovePanel"
-                    @requireAuth="handleRequireAuth"
-                    @cardClicked="handleCardClicked"
-                    @quickAdd="openQuickAddModal"
-                    @click.stop
-                  />
+                  <transition name="group-collapse">
+                    <div v-if="sec.section ? !isSectionCollapsed(sec.section, group.subMenuId) : true">
+                      <CardGrid
+                        :cards="sec.cards"
+                        :selectedCards="selectedCards"
+                        :selectionMode="selectedCards.length > 0"
+                        :categoryId="activeMenu?.id"
+                        :subCategoryId="group.subMenuId"
+                        @contextEdit="handleContextEdit"
+                        @contextDelete="handleContextDelete"
+                        @toggleCardSelection="handleToggleCardSelection"
+                        @openMovePanel="openMovePanel"
+                        @requireAuth="handleRequireAuth"
+                        @cardClicked="handleCardClicked"
+                        @quickAdd="openQuickAddModal"
+                        @click.stop
+                      />
+                    </div>
+                  </transition>
                 </template>
               </div>
             </transition>
@@ -359,7 +368,12 @@
         </div>
       </div>
       <template v-for="sec in groupBySection(sortedFilteredCards)" :key="sec.section || '__default__'">
-        <div v-if="sec.section" class="section-header">
+        <div v-if="sec.section" class="section-header" @click="toggleSectionCollapse(sec.section, activeSubMenu?.id || null)">
+          <button class="collapse-btn section-collapse-btn" :class="{ collapsed: isSectionCollapsed(sec.section, activeSubMenu?.id || null) }">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
           <span v-if="editingSection !== sec.section" class="section-title" @dblclick.stop="startEditSection(sec.section, activeSubMenu?.id || null)" title="双击重命名分组">
             {{ sec.section }}
             <svg class="section-edit-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
@@ -372,21 +386,25 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
           </button>
         </div>
-        <CardGrid
-          :cards="sec.cards"
-          :selectedCards="selectedCards"
-          :selectionMode="selectedCards.length > 0"
-          :categoryId="activeMenu?.id"
-          :subCategoryId="activeSubMenu?.id"
-          @contextEdit="handleContextEdit"
-          @contextDelete="handleContextDelete"
-          @toggleCardSelection="handleToggleCardSelection"
-          @openMovePanel="openMovePanel"
-          @requireAuth="handleRequireAuth"
-          @cardClicked="handleCardClicked"
-          @quickAdd="openQuickAddModal"
-          @click.stop
-        />
+        <transition name="group-collapse">
+          <div v-if="sec.section ? !isSectionCollapsed(sec.section, activeSubMenu?.id || null) : true">
+            <CardGrid
+              :cards="sec.cards"
+              :selectedCards="selectedCards"
+              :selectionMode="selectedCards.length > 0"
+              :categoryId="activeMenu?.id"
+              :subCategoryId="activeSubMenu?.id"
+              @contextEdit="handleContextEdit"
+              @contextDelete="handleContextDelete"
+              @toggleCardSelection="handleToggleCardSelection"
+              @openMovePanel="openMovePanel"
+              @requireAuth="handleRequireAuth"
+              @cardClicked="handleCardClicked"
+              @quickAdd="openQuickAddModal"
+              @click.stop
+            />
+          </div>
+        </transition>
       </template>
     </div>
     
@@ -2601,8 +2619,27 @@ function toggleGroupCollapse(groupKey) {
 }
 
 function isGroupCollapsed(groupKey) {
-  // 不在"展开"集合中的分组默认折叠
   return !expandedGroups.value.has(groupKey);
+}
+
+function getSectionKey(sectionName, subMenuId) {
+  return `sec_${subMenuId || 'main'}_${sectionName}`;
+}
+
+function toggleSectionCollapse(sectionName, subMenuId) {
+  const key = getSectionKey(sectionName, subMenuId);
+  const newSet = new Set(expandedGroups.value);
+  if (expandedGroups.value.has(key)) {
+    newSet.delete(key);
+  } else {
+    newSet.add(key);
+  }
+  expandedGroups.value = newSet;
+  localStorage.setItem('expandedGroups', JSON.stringify([...newSet]));
+}
+
+function isSectionCollapsed(sectionName, subMenuId) {
+  return !expandedGroups.value.has(getSectionKey(sectionName, subMenuId));
 }
 
 // 预加载相邻分类的卡片
@@ -8007,6 +8044,23 @@ async function saveCardEdit() {
   gap: 10px;
   margin: 18px 0 8px;
   padding: 0 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.section-collapse-btn {
+  width: 20px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.section-collapse-btn svg {
+  transition: transform 0.25s ease;
+}
+
+.section-collapse-btn.collapsed svg {
+  transform: rotate(-90deg);
 }
 
 .section-header .section-title {
