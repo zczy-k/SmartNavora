@@ -970,15 +970,15 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         (async () => {
             try {
                 const config = await chrome.storage.sync.get(['navUrl']);
-                const token = (await chrome.storage.local.get(['navAuthToken'])).navAuthToken;
-                if (!config.navUrl || !token) {
-                    sendResponse({ success: false, error: '未配置或未登录' });
+                if (!config.navUrl) {
+                    sendResponse({ success: false, error: '未配置导航站' });
                     return;
                 }
+                const token = (await chrome.storage.local.get(['navAuthToken'])).navAuthToken;
                 const navServerUrl = config.navUrl.replace(/\/$/, '');
-                const resp = await fetch(`${navServerUrl}/api/cards/sections`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
+                const headers = {};
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+                const resp = await fetch(`${navServerUrl}/api/cards/sections`, { headers });
                 if (!resp.ok) {
                     sendResponse({ success: false, error: '获取分组失败' });
                     return;
