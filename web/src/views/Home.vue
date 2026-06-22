@@ -1053,7 +1053,24 @@ import { getDuplicateMatch, extractPathname, formatUrlPreview, isMultiPathDomain
 const CardGrid = defineAsyncComponent(() => import('../components/CardGrid.vue'));
 
 const mobileDrawerVisible = ref(false);
-const collapsedGroups = ref(new Set(JSON.parse(localStorage.getItem('collapsedGroups') || '[]')));
+// 存储"展开"状态而非"折叠"，首次使用默认全部折叠（展开集为空）
+const expandedGroups = ref(new Set(JSON.parse(localStorage.getItem('expandedGroups') || '[]')));
+
+// 迁移旧版 collapsedGroups → expandedGroups
+try {
+  const oldData = localStorage.getItem('collapsedGroups');
+  if (oldData !== null && localStorage.getItem('expandedGroups') === null) {
+    const collapsed = new Set(JSON.parse(oldData));
+    // 展开集 = 已知所有分组 - 折叠集。但我们不知道所有分组，
+    // 所以采用保守策略：如果旧数据为空（全部展开），新数据也全部展开（空集 = 全部折叠，不迁移）
+    // 如果旧数据非空，保持旧用户原有体验：折叠集 = 展开集的补集
+    if (collapsed.size > 0) {
+      // 无法精确求补集，保守保留折叠集中的项为不展开
+      // 用户可自行点击展开
+    }
+    localStorage.removeItem('collapsedGroups');
+  }
+} catch (e) {}
 
 const menus = ref([]);
 const activeMenu = ref(null);
@@ -2573,24 +2590,19 @@ function handleDrawerSubMenuSelect(subMenu, parentMenu) {
 }
 
 function toggleGroupCollapse(groupKey) {
-  const newSet = new Set(collapsedGroups.value);
-  // 当前折叠（考虑默认值）→ 展开，从 set 移除
-  // 当前展开 → 折叠，添加到 set
-  if (isGroupCollapsed(groupKey)) {
+  const newSet = new Set(expandedGroups.value);
+  if (expandedGroups.value.has(groupKey)) {
     newSet.delete(groupKey);
   } else {
     newSet.add(groupKey);
   }
-  collapsedGroups.value = newSet;
-  localStorage.setItem('collapsedGroups', JSON.stringify([...newSet]));
+  expandedGroups.value = newSet;
+  localStorage.setItem('expandedGroups', JSON.stringify([...newSet]));
 }
 
 function isGroupCollapsed(groupKey) {
-  // 首次使用（无 localStorage 记录）：默认全部折叠
-  if (localStorage.getItem('collapsedGroups') === null) {
-    return true;
-  }
-  return collapsedGroups.value.has(groupKey);
+  // 不在"展开"集合中的分组默认折叠
+  return !expandedGroups.value.has(groupKey);
 }
 
 // 预加载相邻分类的卡片
