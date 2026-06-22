@@ -5,7 +5,7 @@
 [![Node](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 [![Security](https://img.shields.io/badge/Security-Enhanced-success.svg)](docs/SECURITY.md)
 
-SmartNavora 是一款面向数字化工作者的 AI 智能导航网站。不止于链接收藏，它集成了 AI 智能生成、多端同步、卡片化管理和浏览器深度集成，提供丝滑流畅的导航体验。
+SmartNavora 是一款面向数字化工作者的 AI 智能导航网站。集 AI 智能生成、卡片化管理、多端同步与浏览器深度集成于一体，提供极速流畅的导航体验。
 
 ---
 
@@ -34,31 +34,21 @@ SmartNavora 是一款面向数字化工作者的 AI 智能导航网站。不止�
 
 ---
 
-## 🚀 安装部署
+## 🚀 快速部署
 
-### 前置准备
+访问地址 `http://你的IP:3000/`，后台 `http://你的IP:3000/admin`，默认账号 `admin / 123456`（首次登录后务必修改）。
 
-- 访问地址：`http://你的IP:3000/`，后台：`http://你的IP:3000/admin`
-- 默认账号：`admin / 123456`（首次登录后务必修改）
-- 推荐设置环境变量：`ADMIN_PASSWORD`（强密码）、`CRYPTO_SECRET`（加密密钥）
+| 环境 | 推荐方式 |
+| :--- | :--- |
+| **Docker / NAS** | Docker Compose |
+| **Linux 服务器** | 一键脚本（PM2 进程守护） |
+| **Serv00 / CT8** | Serv00 脚本（免费空间） |
 
-| 环境 | 推荐方式 | 特点 |
-| :--- | :--- | :--- |
-| **Linux 服务器** | 一键脚本 | 自动配置 PM2 进程守护 |
-| **NAS / Docker** | Docker Compose | 环境隔离，升级简单 |
-| **Serv00 / CT8** | Serv00 脚本 | 免费空间首选 |
+---
 
-### Linux 一键安装
+### 🐳 Docker Compose（推荐）
 
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-linux.sh)
-```
-
-### Docker 部署
-
-**方式一：Docker Compose（推荐）**
-
-创建 `docker-compose.yml`，粘贴以下内容：
+创建 `docker-compose.yml`：
 
 ```yaml
 services:
@@ -76,15 +66,17 @@ services:
     restart: unless-stopped
 ```
 
-> 如需自定义 JWT 密钥、加密密钥等高级选项，参考 [完整配置示例](docker-compose.yml)
-
 ```bash
-# 在 docker-compose.yml 同级目录下执行
 docker compose pull
 docker compose up -d
 ```
 
-**方式二：Docker Run**
+> 如需自定义 JWT 密钥、加密密钥等高级选项，参考 [完整配置示例](docker-compose.yml)。务必持久化 `database/`、`backups/`、`config/` 三个目录，否则容器重建会丢失数据。
+
+---
+
+### 🐳 Docker Run
+
 ```bash
 docker run -d \
   --name SmartNavora \
@@ -97,24 +89,40 @@ docker run -d \
   ghcr.io/zczy-k/smartnavora:latest
 ```
 
-> - 务必持久化挂载 `database/`、`backups/`、`config/` 三个目录，否则容器重建会丢失数据与密钥
-> - 设置 `JWT_SECRET` 和 `CRYPTO_SECRET` 为固定值可避免重建容器后 Token 失效
-> - 健康检查端点：`/healthz`（存活）和 `/readyz`（就绪）
+---
 
-### Serv00 免费主机
+### 🐧 Linux 一键安装
 
-**使用系统默认域名（新手推荐）**
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-linux.sh)
 ```
 
-**使用自定义域名**
+---
+
+### 🌐 Serv00 免费主机
+
 ```bash
+# 使用系统默认域名
+bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh)
+
+# 使用自定义域名（需先添加 CNAME / A 记录）
 DOMAIN=your-domain.com bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh)
 ```
-> 使用自定义域名前，请先在域名服务商处添加 CNAME 或 A 记录指向 Serv00 服务器。
 
-详细部署说明请参见脚本的交互式菜单。
+---
+
+### 🔄 维护升级
+
+**Docker**
+```bash
+docker compose pull && docker compose up -d
+```
+
+**Linux / Serv00**
+```bash
+bash manage-linux.sh update   # Linux
+bash manage-serv00.sh update  # Serv00
+```
 
 ---
 
@@ -126,15 +134,9 @@ DOMAIN=your-domain.com bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/
 2. 解压后 Chrome/Edge 进入 `chrome://extensions/`，开启开发者模式，加载已解压的扩展
 3. 在插件设置中填入导航站地址即可绑定
 
-功能：新标签页替换、右键一键收藏、书签智能导入与标签分类。
-
 ### 🤖 AI 智能生成
 
-1. 后台添加一条只填了 URL 的卡片
-2. 勾选该卡片，点击 **批量 AI 生成**
-3. AI 自动爬取标题、描述、图标，智能推荐分类，一键覆盖或补全
-
-支持 DeepSeek、OpenAI、Claude、GLM 等多模型。
+后台添加一条只填了 URL 的卡片，勾选后点击 **批量 AI 生成**，AI 自动爬取标题、描述、图标并推荐分类，支持 DeepSeek / OpenAI / Claude / GLM 等多模型。
 
 ### 🔥 常用卡片
 
@@ -142,24 +144,7 @@ DOMAIN=your-domain.com bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/
 
 ### 📂 分组管理
 
-- **菜单** → **子菜单** → **卡片** 三层结构，支持拖拽排序
-- 卡片支持 **分组（Section）** 管理，可折叠/展开，状态在服务端持久化
-- 子菜单视图下同样支持 Section 级别折叠
-
-### 🔄 维护升级
-
-**Docker**
-```bash
-docker compose pull && docker compose up -d
-```
-
-**脚本部署**
-```bash
-# Linux
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-linux.sh) update
-# Serv00
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh) update
-```
+菜单 → 子菜单 → 卡片三层结构，支持拖拽排序。卡片支持 Section 级折叠/展开，状态在服务端持久化。
 
 ---
 
@@ -171,7 +156,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/script
 | **后端** | Node.js + Express |
 | **数据库** | SQLite3 |
 | **AI 引擎** | OpenAI / DeepSeek / Claude / GLM 等多模型适配器 |
-| **CI/CD** | GitHub Actions → Docker Image (ghcr.io) |
+| **CI/CD** | GitHub Actions → ghcr.io Docker Image |
 | **部署** | Docker / PM2 / Serv00 |
 
 ---
@@ -196,7 +181,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/script
 
 ## 📄 许可证
 
-本项目采用 **Apache License 2.0** 许可证。
+**Apache License 2.0**
 
 特别感谢 [nav-item](https://github.com/eooce/nav-item) 提供的灵感与基础。
 
@@ -206,7 +191,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/script
 
 ## 🤝 贡献
 
-欢迎提交 Issue 和 Pull Request！
+欢迎提交 Issue 和 Pull Request。
 
 ## 📞 支持
 
