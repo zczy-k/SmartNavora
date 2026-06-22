@@ -1090,6 +1090,13 @@ try {
   }
 } catch (e) {}
 
+// 展开状态变化时自动同步到服务端
+let _skipServerSync = true;
+watch(expandedGroups, () => {
+  if (_skipServerSync) return;
+  saveExpandedGroupsToServer();
+}, { deep: true });
+
 const menus = ref([]);
 const activeMenu = ref(null);
 const activeSubMenu = ref(null);
@@ -1988,6 +1995,7 @@ onMounted(async () => {
 
   // ========== 第二步：一次性并行发起所有网络请求（互不阻塞）==========
   initGlobalSort().catch(() => {});
+  syncExpandedGroupsFromServer().finally(() => { _skipServerSync = false; });
   checkAIConfig();
   checkCloudVersion();
   versionCheckTimer = setInterval(checkCloudVersion, 2 * 60 * 60 * 1000);
@@ -2640,6 +2648,34 @@ function toggleSectionCollapse(sectionName, subMenuId) {
 
 function isSectionCollapsed(sectionName, subMenuId) {
   return !expandedGroups.value.has(getSectionKey(sectionName, subMenuId));
+}
+
+let expandedGroupsSaveTimer = null;
+function saveExpandedGroupsToServer() {
+  if (expandedGroupsSaveTimer) clearTimeout(expandedGroupsSaveTimer);
+  expandedGroupsSaveTimer = setTimeout(() => {
+    const data = JSON.stringify([...expandedGroups.value]);
+    localStorage.setItem('expandedGroups', data);
+    fetch('/api/cards/user-settings/expanded-groups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expandedGroups: data })
+    }).catch(() => {});
+  }, 500);
+}
+
+async function syncExpandedGroupsFromServer() {
+  try {
+    const res = await fetch('/api/cards/user-settings/expanded-groups');
+    const data = await res.json();
+    if (data.expandedGroups) {
+      const parsed = JSON.parse(data.expandedGroups);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        expandedGroups.value = new Set(parsed);
+        localStorage.setItem('expandedGroups', data.expandedGroups);
+      }
+    }
+  } catch (e) {}
 }
 
 // 预加载相邻分类的卡片

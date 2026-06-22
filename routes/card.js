@@ -774,4 +774,28 @@ router.post('/user-settings/sort', (req, res) => {
   );
 });
 
+// 获取分组展开状态
+router.get('/user-settings/expanded-groups', (req, res) => {
+  db.get('SELECT value FROM settings WHERE key = ?', ['expanded_groups'], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ expandedGroups: row?.value || '[]' });
+  });
+});
+
+// 保存分组展开状态
+router.post('/user-settings/expanded-groups', (req, res) => {
+  const { expandedGroups } = req.body;
+  if (!expandedGroups) {
+    return res.status(400).json({ error: '数据不能为空' });
+  }
+  db.run(
+    'REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+    ['expanded_groups', expandedGroups],
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true });
+    }
+  );
+});
+
 module.exports = router;
