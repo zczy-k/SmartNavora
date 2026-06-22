@@ -2574,7 +2574,9 @@ function handleDrawerSubMenuSelect(subMenu, parentMenu) {
 
 function toggleGroupCollapse(groupKey) {
   const newSet = new Set(collapsedGroups.value);
-  if (newSet.has(groupKey)) {
+  // 当前折叠（考虑默认值）→ 展开，从 set 移除
+  // 当前展开 → 折叠，添加到 set
+  if (isGroupCollapsed(groupKey)) {
     newSet.delete(groupKey);
   } else {
     newSet.add(groupKey);
@@ -2584,6 +2586,10 @@ function toggleGroupCollapse(groupKey) {
 }
 
 function isGroupCollapsed(groupKey) {
+  // 首次使用（无 localStorage 记录）：默认全部折叠
+  if (localStorage.getItem('collapsedGroups') === null) {
+    return true;
+  }
   return collapsedGroups.value.has(groupKey);
 }
 
