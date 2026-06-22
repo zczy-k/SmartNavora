@@ -1165,7 +1165,7 @@ async function saveSectionRename(subMenuId) {
   if (!newName || newName === oldName) return;
 
   try {
-    await apiInstance.patch('/api/cards/sections/rename', {
+    await apiInstance.patch('/cards/sections/rename', {
       oldName,
       newName,
       sub_menu_id: subMenuId || null
@@ -1182,7 +1182,7 @@ function deleteSection(sectionName, subMenuId) {
   requireAuth(async () => {
     if (!confirm(`确定取消分组「${sectionName}」？\n该分组下的卡片不会被删除，仅解除分组归属。`)) return;
     try {
-      const { data } = await apiInstance.delete('/api/cards/sections', {
+      const { data } = await apiInstance.delete('/cards/sections', {
         data: { name: sectionName, sub_menu_id: subMenuId || null }
       });
       showToastMessage(`已取消分组「${sectionName}」，${data.updated} 张卡片已解除分组`, 'success');
