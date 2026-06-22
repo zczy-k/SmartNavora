@@ -1885,7 +1885,7 @@ onMounted(async () => {
       // 立即使用缓存数据渲染（即使过期也先显示）
       if (data.menus?.length) {
         menus.value = data.menus;
-        activeMenu.value = menus.value[0];
+        isFrequentView.value = true;
         cacheUsed = true;
       }
       if (data.cards) {
@@ -2001,9 +2001,9 @@ onMounted(async () => {
     cacheData.menus = menusRes.value.data;
     if (menus.value.length) {
       if (!cacheUsed) {
-        activeMenu.value = menus.value[0];
+        isFrequentView.value = true;
       }
-      await loadCards();
+      await loadFrequentCards();
       cacheData.cards = cards.value;
       deferredSearchTimer = setTimeout(() => {
         if (document.visibilityState === 'visible') {
