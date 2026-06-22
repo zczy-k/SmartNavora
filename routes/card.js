@@ -382,6 +382,28 @@ router.patch('/sections/rename', auth, (req, res) => {
   });
 });
 
+// 删除分组（清空卡片的 section 字段，不删除卡片本身）
+router.delete('/sections', auth, (req, res) => {
+  const { name, sub_menu_id } = req.body;
+  if (!name) return res.status(400).json({ error: '缺少分组名称' });
+
+  let sql, params;
+  if (sub_menu_id) {
+    sql = "UPDATE cards SET section = '' WHERE section = ? AND sub_menu_id = ?";
+    params = [name, sub_menu_id];
+  } else {
+    sql = "UPDATE cards SET section = '' WHERE section = ? AND (sub_menu_id IS NULL)";
+    params = [name];
+  }
+
+  db.run(sql, params, function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    const clientId = req.headers['x-client-id'];
+    if (this.changes > 0) triggerDebouncedBackup(clientId, { type: 'cards_updated' });
+    res.json({ success: true, updated: this.changes });
+  });
+});
+
 // 获取所有卡片（按分类分组，用于首屏加载优化）
 router.get('/', (req, res) => {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');

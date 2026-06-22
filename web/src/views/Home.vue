@@ -277,7 +277,7 @@
               <div v-if="!isGroupCollapsed(group.key)">
                 <template v-for="sec in groupBySection(sortAndFilterCards(group.cards, group.subMenuId))" :key="sec.section || '__default__'">
                   <div v-if="sec.section" class="section-header">
-                    <span v-if="editingSection !== sec.section" class="section-title" @click="startEditSection(sec.section, group.subMenuId)" title="点击重命名分组">
+                    <span v-if="editingSection !== sec.section" class="section-title" @dblclick.stop="startEditSection(sec.section, group.subMenuId)" title="双击重命名分组">
                       {{ sec.section }}
                       <svg class="section-edit-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                     </span>
@@ -285,6 +285,9 @@
                       <input v-model="editingSectionValue" class="section-rename-input" @keyup.enter="saveSectionRename(group.subMenuId)" @keyup.escape="editingSection = ''" @blur="saveSectionRename(group.subMenuId)" ref="sectionRenameInput" />
                     </span>
                     <span class="section-count">{{ sec.cards.length }}</span>
+                    <button v-if="editingSection !== sec.section" class="section-delete-btn" @click.stop="deleteSection(sec.section, group.subMenuId)" title="取消分组">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
                   </div>
                   <CardGrid
                     :cards="sec.cards"
@@ -317,7 +320,7 @@
       </div>
       <template v-for="sec in groupBySection(sortedFilteredCards)" :key="sec.section || '__default__'">
         <div v-if="sec.section" class="section-header">
-          <span v-if="editingSection !== sec.section" class="section-title" @click="startEditSection(sec.section, activeSubMenu?.id || null)" title="点击重命名分组">
+          <span v-if="editingSection !== sec.section" class="section-title" @dblclick.stop="startEditSection(sec.section, activeSubMenu?.id || null)" title="双击重命名分组">
             {{ sec.section }}
             <svg class="section-edit-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
           </span>
@@ -325,6 +328,9 @@
             <input v-model="editingSectionValue" class="section-rename-input" @keyup.enter="saveSectionRename(activeSubMenu?.id || null)" @keyup.escape="editingSection = ''" @blur="saveSectionRename(activeSubMenu?.id || null)" />
           </span>
           <span class="section-count">{{ sec.cards.length }}</span>
+          <button v-if="editingSection !== sec.section" class="section-delete-btn" @click.stop="deleteSection(sec.section, activeSubMenu?.id || null)" title="取消分组">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
         </div>
         <CardGrid
           :cards="sec.cards"
@@ -1169,6 +1175,22 @@ async function saveSectionRename(subMenuId) {
   } catch (err) {
     showToastMessage('重命名失败: ' + (err.response?.data?.error || err.message), 'error');
   }
+}
+
+// 删除分组（清空卡片的 section 字段，不删除卡片）
+function deleteSection(sectionName, subMenuId) {
+  requireAuth(async () => {
+    if (!confirm(`确定取消分组「${sectionName}」？\n该分组下的卡片不会被删除，仅解除分组归属。`)) return;
+    try {
+      const { data } = await apiInstance.delete('/api/cards/sections', {
+        data: { name: sectionName, sub_menu_id: subMenuId || null }
+      });
+      showToastMessage(`已取消分组「${sectionName}」，${data.updated} 张卡片已解除分组`, 'success');
+      await loadCards(true);
+    } catch (err) {
+      showToastMessage('取消分组失败: ' + (err.response?.data?.error || err.message), 'error');
+    }
+  });
 }
 
 // 批量设置分组
@@ -7778,6 +7800,26 @@ async function saveCardEdit() {
 
 .section-title.section-editing {
   cursor: default;
+}
+
+.section-delete-btn {
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.35);
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  display: inline-flex;
+  align-items: center;
+}
+
+.section-header:hover .section-delete-btn {
+  opacity: 1;
+}
+
+.section-delete-btn:hover {
+  color: #fc8181;
 }
 
 .section-rename-input {
