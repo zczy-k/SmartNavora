@@ -7,7 +7,7 @@
           :class="{active: isFrequentActive}"
           title="常用站点"
         >
-          🔥 常用
+          常用
         </button>
       </div>
       <div

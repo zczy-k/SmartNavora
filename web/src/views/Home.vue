@@ -263,7 +263,7 @@
     <div class="cards-single-container" v-if="isFrequentView">
       <div class="card-group-header single-header">
         <div class="group-header-left">
-          <span class="group-name">🔥 常用站点</span>
+          <span class="group-name">常用站点</span>
           <span class="group-count">{{ frequentCards.length }}</span>
         </div>
       </div>

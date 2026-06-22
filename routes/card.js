@@ -703,7 +703,7 @@ router.post('/:id/click', (req, res) => {
   );
 });
 
-// 获取常用卡片（按 click_count 降序，最多 limit 张）
+// 获取常用卡片（高频优先，不足时用最近添加的卡片补齐）
 router.get('/frequent', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 50);
   const sql = `
@@ -711,8 +711,10 @@ router.get('/frequent', (req, res) => {
     FROM cards c
     LEFT JOIN menus m ON c.menu_id = m.id
     LEFT JOIN sub_menus sm ON c.sub_menu_id = sm.id
-    WHERE c.click_count > 0
-    ORDER BY c.click_count DESC
+    ORDER BY
+      CASE WHEN c.click_count > 0 THEN 0 ELSE 1 END,
+      c.click_count DESC,
+      c.id DESC
     LIMIT ?
   `;
   db.all(sql, [limit], (err, rows) => {
