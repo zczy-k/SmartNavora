@@ -1111,6 +1111,12 @@ function groupBySection(cardList) {
     }
     map.get(sec).push(card);
   }
+  // 已分组的排前面，未分组的（空字符串）排最后
+  order.sort((a, b) => {
+    if (a === '' && b !== '') return 1;
+    if (a !== '' && b === '') return -1;
+    return 0;
+  });
   return order.map(sec => ({ section: sec, cards: map.get(sec) }));
 }
 const leftPromos = ref([]);
