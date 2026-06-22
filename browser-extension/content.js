@@ -1354,7 +1354,7 @@
                       font-weight: 400;
                   }
                   .section-suggestions {
-                      position: fixed;
+                      position: absolute;
                       background: #fff;
                       border: 1px solid #e2e5e8;
                       border-radius: 6px;
@@ -1509,7 +1509,6 @@
                                           <input type="text" class="confirm-value confirm-section-input" id="confirmSectionText" placeholder="可选，如：AI 工具、开发环境" autocomplete="off">
                                           <span class="section-dropdown-arrow" id="sectionDropdownArrow">&#9662;</span>
                                       </div>
-                                      <div class="section-suggestions" id="sectionSuggestions" style="display:none;"></div>
                                   </div>
                                   <div class="confirm-row">
                                       <span class="confirm-label">链接：</span>
@@ -1553,6 +1552,7 @@
                               <button class="btn btn-primary" id="submitBtn" disabled>下一步</button>
                           </div>
                     </div>
+                    <div class="section-suggestions" id="sectionSuggestions" style="display:none;"></div>
                 </div>
             </div>
             
@@ -1745,9 +1745,13 @@
                       if (sectionInput && suggestionsBox) {
                           function updateSuggestionsPosition() {
                               const rect = sectionInput.getBoundingClientRect();
-                              suggestionsBox.style.left = rect.left + 'px';
-                              suggestionsBox.style.top = (rect.bottom + 2) + 'px';
-                              suggestionsBox.style.width = rect.width + 'px';
+                              const overlay = dialogShadowRoot.querySelector('.overlay');
+                              if (overlay) {
+                                  const overlayRect = overlay.getBoundingClientRect();
+                                  suggestionsBox.style.left = (rect.left - overlayRect.left) + 'px';
+                                  suggestionsBox.style.top = (rect.bottom - overlayRect.top + 2) + 'px';
+                                  suggestionsBox.style.width = rect.width + 'px';
+                              }
                           }
                           function showSuggestions(filter) {
                               const q = (filter || '').toLowerCase();
@@ -1787,7 +1791,7 @@
                           sectionInput.addEventListener('blur', () => {
                               setTimeout(() => { suggestionsBox.style.display = 'none'; }, 150);
                           });
-                          // 弹窗滚动时隐藏下拉框（fixed定位不会跟随滚动）
+                          // 弹窗滚动时隐藏下拉框（位置基于输入框计算，滚动后会偏移）
                           const scrollParent = sectionInput.closest('.dialog-body');
                           if (scrollParent) {
                               scrollParent.addEventListener('scroll', () => {
