@@ -1865,49 +1865,31 @@ onMounted(async () => {
 
   // 加载保存的背景设置
   loadBgSetting();
-  
-  // 初始化全局排序设置
-  await initGlobalSort();
-  
-  // 检查 AI 配置状态
-  checkAIConfig();
 
-  // 检查云端版本差异
-  checkCloudVersion();
-  versionCheckTimer = setInterval(checkCloudVersion, 2 * 60 * 60 * 1000);
-  
-  // ========== 优化：先加载缓存数据实现秒开 ==========
+  // ========== 第一步：优先从缓存恢复数据（零网络等待，秒开）==========
   const CACHE_KEY = 'nav_data_cache';
-  const CARDS_CACHE_KEY = 'nav_cards_cache'; // 分类卡片缓存
-  const CACHE_TTL = 5 * 60 * 1000; // 5分钟缓存有效期
-  
-  // 尝试从缓存加载数据
+  const CARDS_CACHE_KEY = 'nav_cards_cache';
+  const CACHE_TTL = 5 * 60 * 1000;
+
   let cacheUsed = false;
-  let cachedCardsMap = {}; // 缓存的分类卡片映射
-  
+  let cachedCardsMap = {};
+
   try {
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
       const { data, timestamp } = JSON.parse(cached);
-      
-      // 立即使用缓存数据渲染（即使过期也先显示）
       if (data.menus?.length) {
         menus.value = data.menus;
         isFrequentView.value = true;
         cacheUsed = true;
       }
-      if (data.cards) {
-        cards.value = data.cards;
-      }
-      // 从缓存恢复常用卡片
+      if (data.cards) cards.value = data.cards;
       loadFrequentCardsFromCache();
       if (data.promos) {
         leftPromos.value = data.promos.filter(item => item.position === 'left');
         rightPromos.value = data.promos.filter(item => item.position === 'right');
       }
-      if (data.friends) {
-        friendLinks.value = data.friends;
-      }
+      if (data.friends) friendLinks.value = data.friends;
       if (data.engines) {
         const customEngines = data.engines.map(engine => ({
           name: 'custom_' + engine.id,
@@ -1922,81 +1904,74 @@ onMounted(async () => {
         }));
         searchEngines.value = [...defaultEngines, ...customEngines];
       }
-      
-      // 恢复用户保存的搜索引擎顺序
       const savedOrder = localStorage.getItem('search_engine_order');
       if (savedOrder) {
         try {
           const order = JSON.parse(savedOrder);
           const engineMap = new Map(searchEngines.value.map(e => [e.name, e]));
           const sorted = [];
-          // 按保存的顺序排列
           order.forEach(name => {
-            if (engineMap.has(name)) {
-              sorted.push(engineMap.get(name));
-              engineMap.delete(name);
-            }
+            if (engineMap.has(name)) { sorted.push(engineMap.get(name)); engineMap.delete(name); }
           });
-          // 新增的引擎放到末尾
           engineMap.forEach(e => sorted.push(e));
-          if (sorted.length > 0) {
-            searchEngines.value = sorted;
-          }
-        } catch (e) {
-          // 解析失败忽略
-        }
+          if (sorted.length > 0) searchEngines.value = sorted;
+        } catch (e) {}
       }
-      
-      // 从缓存恢复用户选择的搜索引擎
       const savedEngineName = localStorage.getItem('default_search_engine');
       if (savedEngineName) {
         const foundEngine = searchEngines.value.find(e => e.name === savedEngineName);
-        if (foundEngine) {
-          selectedEngine.value = foundEngine;
-        }
+        if (foundEngine) selectedEngine.value = foundEngine;
       }
     }
-    
-    // 加载分类卡片缓存到内存
     const cardsCacheStr = localStorage.getItem(CARDS_CACHE_KEY);
     if (cardsCacheStr) {
       const { data: cardsData, timestamp } = JSON.parse(cardsCacheStr);
       if (Date.now() - timestamp < CACHE_TTL) {
         cachedCardsMap = cardsData || {};
         cardsCache.value = cachedCardsMap;
-        
-          // 如果有首屏分类的缓存，立即显示（包括主菜单和所有子菜单的卡片）
-          if (menus.value.length > 0) {
-            const firstMenu = menus.value[0];
-            const allCachedCards = [];
-            
-            // 主菜单直接挂载的卡片
-            const firstMenuKey = `${firstMenu.id}_null`;
-            if (cachedCardsMap[firstMenuKey]) {
-              allCachedCards.push(...cachedCardsMap[firstMenuKey]);
-            }
-            
-            // 所有子菜单的卡片
-            if (firstMenu.subMenus && firstMenu.subMenus.length) {
-              for (const subMenu of firstMenu.subMenus) {
-                const subKey = `${firstMenu.id}_${subMenu.id}`;
-                if (cachedCardsMap[subKey]) {
-                  allCachedCards.push(...cachedCardsMap[subKey]);
-                }
-              }
-            }
-            
-            if (allCachedCards.length > 0) {
-              cards.value = allCachedCards;
+        if (menus.value.length > 0) {
+          const firstMenu = menus.value[0];
+          const allCachedCards = [];
+          const firstMenuKey = `${firstMenu.id}_null`;
+          if (cachedCardsMap[firstMenuKey]) allCachedCards.push(...cachedCardsMap[firstMenuKey]);
+          if (firstMenu.subMenus && firstMenu.subMenus.length) {
+            for (const subMenu of firstMenu.subMenus) {
+              const subKey = `${firstMenu.id}_${subMenu.id}`;
+              if (cachedCardsMap[subKey]) allCachedCards.push(...cachedCardsMap[subKey]);
             }
           }
+          if (allCachedCards.length > 0) cards.value = allCachedCards;
+        }
       }
     }
-  } catch (e) {
-    // 缓存读取失败，忽略
+  } catch (e) {}
+
+  // 无缓存时立即显示骨架屏，避免空白闪烁
+  if (!cacheUsed && frequentCards.value.length === 0) {
+    isFrequentLoading.value = true;
   }
-  
-  // ========== 后台加载最新数据（并行化：菜单和常用卡片同时加载）==========
+
+  // ========== 第二步：一次性并行发起所有网络请求（互不阻塞）==========
+  initGlobalSort().catch(() => {});
+  checkAIConfig();
+  checkCloudVersion();
+  versionCheckTimer = setInterval(checkCloudVersion, 2 * 60 * 60 * 1000);
+
+  const cacheData = { menus: null, cards: null, tags: null, ads: null, friends: null, engines: null };
+
+  // 全部请求同时发起——菜单、常用卡片、全量卡片、宣传/友链/引擎
+  getAllCards(true).then(res => {
+    const { cardsByCategory } = res.data;
+    if (cardsByCategory) {
+      Object.assign(cardsCache.value, cardsByCategory);
+      saveCardsCache();
+      allCards.value = Object.values(cardsByCategory).flat();
+    }
+  }).catch(() => {});
+
+  loadDeferredHomeData(cacheData).catch(() => {});
+
+  // 仅等待菜单和常用卡片（核心内容），全量卡片不阻塞
   const [menusRes] = await Promise.all([
     Promise.resolve(getMenus()).then(
       value => ({ status: 'fulfilled', value }),
@@ -2005,27 +1980,14 @@ onMounted(async () => {
     loadFrequentCards().catch(() => {})
   ]);
 
-  // 准备缓存数据
-  const cacheData = { menus: null, cards: null, tags: null, ads: null, friends: null, engines: null };
-
-  // 处理菜单数据（优先级最高）
   if (menusRes.status === 'fulfilled') {
     menus.value = menusRes.value.data;
     cacheData.menus = menusRes.value.data;
     if (menus.value.length) {
-      if (!cacheUsed) {
-        isFrequentView.value = true;
-      }
+      if (!cacheUsed) isFrequentView.value = true;
       cacheData.cards = cards.value;
-      // 立即预加载所有分类的卡片到缓存，实现菜单切换秒开
-      if (document.visibilityState === 'visible') {
-        loadAllCardsForSearch().catch(() => {});
-      }
     }
   }
-  deferredDataTimer = setTimeout(() => {
-    loadDeferredHomeData(cacheData).catch(() => {});
-  }, 800);
   
   // 获取并保存数据版本号
   try {
@@ -5140,6 +5102,7 @@ async function saveCardEdit() {
   display: flex;
   flex-direction: column;
   position: relative;
+  animation: homeFadeIn 0.4s ease both;
   padding-top: 50px;
   overflow-x: hidden;
 }
@@ -5161,6 +5124,11 @@ async function saveCardEdit() {
   );
   z-index: 1;
   pointer-events: none;
+}
+
+@keyframes homeFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .search-section {
