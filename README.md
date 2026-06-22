@@ -66,11 +66,18 @@ docker compose up -d
 
 ### Serv00 免费主机
 
+**使用系统默认域名（新手推荐）**
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh)
 ```
 
-详细部署说明请参见各脚本的交互式菜单。
+**使用自定义域名**
+```bash
+DOMAIN=your-domain.com bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh)
+```
+> 使用自定义域名前，请先在域名服务商处添加 CNAME 或 A 记录指向 Serv00 服务器。
+
+详细部署说明请参见脚本的交互式菜单。
 
 ---
 
