@@ -7771,14 +7771,14 @@ async function saveCardEdit() {
 .section-header .section-title {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.85);
   letter-spacing: 0.3px;
   white-space: nowrap;
 }
 
 .section-header .section-count {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.6);
   font-weight: 400;
 }
 
@@ -7807,7 +7807,7 @@ async function saveCardEdit() {
   border: none;
   padding: 2px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.55);
   opacity: 0;
   transition: opacity 0.15s, color 0.15s;
   display: inline-flex;
