@@ -5,298 +5,166 @@
 [![Node](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 [![Security](https://img.shields.io/badge/Security-Enhanced-success.svg)](docs/SECURITY.md)
 
-SmartNavora 是一款专为数字化工作者打造的 AI 智能导航网站。它不仅仅是一个链接收藏夹，更是一个集成了 AI 智能生成、多端同步、卡片化管理和浏览器深度集成的全能工作台。
+SmartNavora 是一款面向数字化工作者的 AI 智能导航网站。不止于链接收藏，它集成了 AI 智能生成、多端同步、卡片化管理和浏览器深度集成，提供丝滑流畅的导航体验。
 
 ---
+
+## 🌟 功能亮点
+
+- **⚡ 丝滑体验** — 并行请求 + 多级缓存 + 骨架屏 + 卡片淡入动画，加载无闪烁
+- **🤖 AI 赋能** — 内置多模型适配器，一键补全图标、描述、标签与分类
+- **📂 三层架构** — 菜单 → 子菜单 → 卡片，支持拖拽排序与分组折叠
+- **🔥 常用卡片** — 基于点击频率与时间衰减的智能推荐，默认展示高频卡片
+- **🔍 拼音搜索** — 支持全站拼音模糊搜索，快速定位卡片
+- **🧩 浏览器插件** — 接管新标签页、右键一键保存、书签同步
+- **🔒 数据安全** — bcrypt + JWT + 审计日志 + 紧急重置令牌
+- **💾 自动备份** — 本地定时备份 + WebDAV 云端同步
+
+---
+
 ## 📸 界面预览
 
 <div align="center">
   <img width="90%" alt="首页预览" src="https://github.com/user-attachments/assets/3b974405-312b-4cb1-9c16-5b87d45e79e5" />
-  <p><i>现代化渐变卡片首页</i></p>
-  
+  <p><i>渐进式卡片首页，支持分组折叠与常用卡片推荐</i></p>
+
   <img width="45%" alt="管理后台" src="https://github.com/user-attachments/assets/b3a4bac2-f7b8-4742-8982-11a7381782cb" />
   <img width="45%" alt="AI 配置" src="https://github.com/user-attachments/assets/e34ab03c-fe3a-43d2-835a-775b5ceb61ed" />
 </div>
 
-
 ---
 
-## 🌟 亮点功能
+## 🚀 安装部署
 
-*   **⚡ 极速体验**：基于 Vue 3 + Node.js，响应迅捷，前端构建轻量。
-*   **🤖 AI 赋能**：内置多种主流 AI 适配，一键自动补全网站图标、描述、标签。
-*   **🧩 深度集成**：配套强大的浏览器插件，支持新标签页接管、快捷搜藏。
-*   **📂 数据安全**：内置 SQLite 数据库，支持本地备份与 WebDAV 云端备份。
-*   **🔒 安全增强**：多重密码保护机制，审计日志，紧急恢复令牌。
-*   **🎨 颜值即正义**：现代化渐变卡片 UI，支持暗黑模式，极致的视觉体验。
-
----
-
-## 🆕 v1.36.1 更新内容
-
-### 🔐 安全性增强
-- ✅ 新增交互式密码重置功能，避免命令行泄露
-- ✅ 紧急重置令牌系统（哈希存储，1小时过期）
-- ✅ 完整的操作审计日志
-- ✅ 密码重置不再显示明文
-- ✅ Serv00 脚本集成密码管理功能
-
-### 🛠️ 部署优化
-- ✅ 修复 Serv00 重置功能不会断开 SSH 连接
-- ✅ 改进重置流程，确保彻底清理残留
-- ✅ 更详细的安装进度提示
-
-### 📚 文档完善
-- ✅ 新增 [密码找回指南](docs/PASSWORD-RECOVERY.md)
-- ✅ 新增 [安全最佳实践](docs/SECURITY.md)
-- ✅ 更新部署说明和使用指南
-
-### 🐛 Bug 修复
-- ✅ 修复安全漏洞（tar, fast-xml-parser, undici, cheerio）
-- ✅ 优化依赖包版本
-
----
-
-## 🚀 安装部署流程 (全流程指导)
-
-无论你是拥有云服务器的大神，还是使用免费虚拟主机的学生党，都能轻松部署。
-
-### 0. 先看这里（新手 1 分钟搞懂）
+### 前置准备
 
 - 访问地址：`http://你的IP:3000/`，后台：`http://你的IP:3000/admin`
 - 默认账号：`admin / 123456`（首次登录后务必修改）
-- Docker 部署请务必持久化挂载 `database/`、`backups/`、`config/`，否则容器重建会丢配置/密钥
-- 建议立刻设置两个环境变量：
-  - `ADMIN_PASSWORD`：管理员密码（强密码）
-  - `CRYPTO_SECRET`：用于加密 WebDAV/AI 等敏感配置（固定不变的随机字符串）
+- 推荐设置环境变量：`ADMIN_PASSWORD`（强密码）、`CRYPTO_SECRET`（加密密钥）
 
-### 1. 选择部署方式
-| 部署环境 | 推荐方案 | 特点 |
+| 环境 | 推荐方式 | 特点 |
 | :--- | :--- | :--- |
-| **Linux 服务器** | 一键脚本 | 自动化配置 PM2 进程守护，最稳定 |
-| **NAS / Docker** | Docker Compose（推荐）/ Docker Run | 环境隔离，升级最简单 |
-| **Serv00 / CT8** | Serv00 脚本 | 免费空间首选，自动配置域名与端口 |
+| **Linux 服务器** | 一键脚本 | 自动配置 PM2 进程守护 |
+| **NAS / Docker** | Docker Compose | 环境隔离，升级简单 |
+| **Serv00 / CT8** | Serv00 脚本 | 免费空间首选 |
 
-### 2. 执行安装命令
+### Linux 一键安装
 
-#### A. Linux 服务器 (Ubuntu/Debian/CentOS)
-
-交互式安装：
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-linux.sh)
 ```
 
-直接执行安装：
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-linux.sh) install
-```
+### Docker 部署
 
-更新已有安装：
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-linux.sh) update
-```
-
-- 默认安装目录：`~/SmartNavora`
-- PM2 进程名：`SmartNavora`
-
-#### B. Docker 部署 (最快上手)
-
-推荐优先用 `docker compose`（命令更短、升级更省事）。
-
-**方式一：Docker Compose（推荐）**
-
-如果你已经在仓库目录中，直接启动：
-```bash
-docker compose pull
-docker compose up -d
-```
-
-如果你还没有项目文件，先克隆仓库再启动：
 ```bash
 git clone https://github.com/zczy-k/SmartNavora.git
 cd SmartNavora
 docker compose up -d
 ```
 
-**方式二：Docker Run（兼容性最好）**
-```bash
-docker run -d \
-  --name SmartNavora \
-  -p 3000:3000 \
-  -v $(pwd)/database:/app/database \
-  -v $(pwd)/backups:/app/backups \
-  -v $(pwd)/config:/app/config \
-  -e ADMIN_USERNAME=admin \
-  -e ADMIN_PASSWORD=123456 \
-  --restart unless-stopped \
-  ghcr.io/zczy-k/smartnavora:latest
-```
-> Docker deployment notes
-> - Persist `database/`, `backups/`, and `config/` together. If any of them is missing, container rebuilds may lose data, keys, or backup settings.
-> - The image does not bundle your old `database/nav.db`. To keep existing data, mount the old database directory or restore a backup into `/app/database`.
-> - `JWT_SECRET` and `CRYPTO_SECRET` can be auto-generated, but setting them explicitly is still recommended for long-term Docker deployments and easier migration.
-> - `AUTO_BACKUP_ENABLED=false` is optional. It is only recommended on low-resource platforms while you are checking container stability.
-> - `TRUST_PROXY` is optional. By default the app auto-trusts common private/local reverse proxies; if your platform is unusual, you can set `TRUST_PROXY=1`, `TRUST_PROXY=true`, or another Express-supported value explicitly.
-> - Recommended health check paths are `/healthz` for liveness and `/readyz` for readiness.
-> - If startup logs say `/app/database` or `/app/config` is not writable, the persistent volume is mounted incorrectly or does not support writes.
-> 💡 强烈建议同时持久化 `database/`、`backups/`、`config/` 三个目录：
-> - `config/` 里包含 JWT 密钥与加密密钥（影响登录 token、WebDAV/AI 配置解密）
-> - `database/` 里是你的数据
-> - `backups/` 里是本地备份文件
+> Docker 务必持久化挂载 `database/`、`backups/`、`config/` 三个目录。
 
-#### C. Serv00 / 免费虚拟主机
+### Serv00 免费主机
 
-**方式一：使用系统自带域名 (推荐新手)**
 ```bash
-# 脚本会自动识别当前账号对应的默认域名
 bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh)
 ```
 
-更新已有安装：
-```bash
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh) update
-```
-
-**方式二：使用自定义域名**
-```bash
-# 将 your-domain.com 替换为你已解析到 Serv00 的域名
-DOMAIN=your-domain.com bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh)
-```
-> 💡 使用自定义域名前，请先在域名服务商处添加 CNAME 或 A 记录指向 Serv00 服务器。
-
-### 3. 初始化配置 (安装后必看)
-1.  **访问后台**：
-    Linux / Docker 打开 `http://你的IP:3000/admin`；Serv00 打开 `https://你的域名/admin`。
-2.  **默认账号**：用户名 `admin`，密码 `123456`。
-3.  **安全修改**：进入 **[用户与权限]** 菜单，第一时间修改管理员用户名和密码。
-4.  **配置 AI**：进入 **[AI 配置]**，填入你的 API Key（推荐 DeepSeek），测试通过后即可享受一键生成功能。
-5.  **配置 WebDAV（可选）**：进入 **[备份与恢复]** → WebDAV 配置，保存成功后可在不同设备/服务器间同步备份。
-
-### 4. 忘记密码？
-如果忘记了管理员密码，可以通过以下方式重置：
-
-**Linux 服务器用户**
-```bash
-# 方法1: 直接执行密码重置
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-linux.sh) password
-
-# 方法2: 使用交互式菜单
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-linux.sh)
-# 选择 2) 重置管理密码
-
-# 方法3: 进入安装目录后交互式重置
-cd ~/SmartNavora
-node scripts/check-password.js interactive
-```
-
-**Serv00 用户**
-```bash
-# 使用管理脚本
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh)
-# 选择 3) 重置管理密码
-```
-
-**Docker 用户**
-```bash
-# 方法1: 直接运行重置脚本
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/docker-reset-password.sh)
-
-# 方法2: 指定容器名运行重置脚本
-bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/docker-reset-password.sh) SmartNavora
-
-# 方法3: 直接进入容器
-docker exec -it SmartNavora node scripts/check-password.js interactive
-```
-
-📖 详细说明请查看 [密码找回指南](docs/PASSWORD-RECOVERY.md)
+详细部署说明请参见各脚本的交互式菜单。
 
 ---
 
-## 📦 进阶使用指南
+## 🔧 使用指南
 
-### 🌐 浏览器插件安装
-想要实现“右键一键保存网站”或“新标签页即导航”？
-1.  前往 [Releases](https://github.com/zczy-k/SmartNavora/releases) 下载最新 `smartnavora-extension-v*.zip`。
-2.  解压后，在 Chrome/Edge 浏览器进入 `chrome://extensions/`。
-3.  开启 **开发者模式**，选择 **加载已解压的扩展程序**。
-4.  在插件设置中填入你的导航站地址，完成绑定。
+### 🌐 浏览器插件
 
-### 🤖 如何让 AI 帮我干活？
-1.  在后台添加一个只写了“URL”的卡片。
-2.  勾选该卡片，点击 **批量 AI 生成**。
-3.  AI 会自动爬取标题、描述、图标并分类，点击“覆盖”或“补全”保存。
+1. 前往 [Releases](https://github.com/zczy-k/SmartNavora/releases) 下载 `smartnavora-extension-v*.zip`
+2. 解压后 Chrome/Edge 进入 `chrome://extensions/`，开启开发者模式，加载已解压的扩展
+3. 在插件设置中填入导航站地址即可绑定
 
-### 🔄 维护与升级
+功能：新标签页替换、右键一键收藏、书签智能导入与标签分类。
 
-#### Docker 用户
+### 🤖 AI 智能生成
+
+1. 后台添加一条只填了 URL 的卡片
+2. 勾选该卡片，点击 **批量 AI 生成**
+3. AI 自动爬取标题、描述、图标，智能推荐分类，一键覆盖或补全
+
+支持 DeepSeek、OpenAI、Claude、GLM 等多模型。
+
+### 🔥 常用卡片
+
+首页默认展示常用卡片，基于 7 天时间窗口的点击频率与最近访问时间智能排序，每 30 秒自动刷新。
+
+### 📂 分组管理
+
+- **菜单** → **子菜单** → **卡片** 三层结构，支持拖拽排序
+- 卡片支持 **分组（Section）** 管理，可折叠/展开，状态在服务端持久化
+- 子菜单视图下同样支持 Section 级别折叠
+
+### 🔄 维护升级
+
+**Docker**
 ```bash
-# 如果你使用 docker compose（推荐）
-docker compose pull
-docker compose up -d
-
-# 如果你使用 docker run
-docker pull ghcr.io/zczy-k/smartnavora:latest
-docker stop SmartNavora && docker rm SmartNavora
-# 然后重新运行上面的 docker run 命令（务必包含 -v $(pwd)/config:/app/config 等持久化挂载）
+docker compose pull && docker compose up -d
 ```
 
-#### 脚本用户 (Linux/Serv00)
-运行对应更新命令即可，更新流程会保留数据库和 `.env` 配置：
-
+**脚本部署**
 ```bash
 # Linux
 bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-linux.sh) update
-
 # Serv00
 bash <(curl -Ls https://raw.githubusercontent.com/zczy-k/SmartNavora/main/scripts/manage-serv00.sh) update
 ```
 
 ---
 
-## 🧯 常见问题（部署/升级相关）
+## 🛠️ 技术栈
 
-### 1) WebDAV 保存/测试超时（ETIMEDOUT）
-
-一些服务器 IPv6 出网异常但 DNS 返回 AAAA，会导致 WebDAV 测试连接超时。
-本项目默认已在代码层面强制优先使用 IPv4（无需额外配置）。
-如你确实需要访问 IPv6-only 资源，可设置 `FORCE_IPV4=0` 关闭。
-
-### 2) Docker 中恢复备份报错 EBUSY（database 被占用）
-
-当 `database/` 目录被挂载且 SQLite 正在使用时，直接删除目录可能失败。
-新版本已优化恢复逻辑：会先关闭数据库连接并改为清空目录内容再恢复。
+| 层 | 技术 |
+| :--- | :--- |
+| **前端** | Vue 3 + Vite + Vue Router |
+| **后端** | Node.js + Express |
+| **数据库** | SQLite3 |
+| **AI 引擎** | OpenAI / DeepSeek / Claude / GLM 等多模型适配器 |
+| **CI/CD** | GitHub Actions → Docker Image (ghcr.io) |
+| **部署** | Docker / PM2 / Serv00 |
 
 ---
 
-## 🛠️ 技术栈
-*   **前端**: Vue 3 + Vite
-*   **后端**: Node.js + Express
-*   **数据库**: SQLite3 (简单、快速、易迁移)
-*   **AI 引擎**: 多模型适配器 (OpenAI, DeepSeek, Claude, GLM, etc.)
-
 ## 📚 文档
-- [密码找回指南](docs/PASSWORD-RECOVERY.md) - 忘记密码的多种解决方案
-- [安全最佳实践](docs/SECURITY.md) - 安全使用建议和风险缓解
+
+- [密码找回指南](docs/PASSWORD-RECOVERY.md)
+- [安全最佳实践](docs/SECURITY.md)
+
+---
 
 ## 🔒 安全特性
-- ✅ bcrypt 密码哈希加密
-- ✅ JWT 令牌认证
-- ✅ 紧急重置令牌（SHA-256 哈希存储）
-- ✅ 操作审计日志
-- ✅ 文件权限保护（0600）
-- ✅ 依赖包安全更新
+
+- bcrypt 密码哈希
+- JWT 令牌认证（支持版本轮换）
+- 紧急重置令牌（SHA-256 哈希存储，1 小时过期）
+- 操作审计日志
+- 文件权限保护（0600）
+- 请求频率限制与输入清洗
+
+---
 
 ## 📄 许可证
+
 本项目采用 **Apache License 2.0** 许可证。
+
 特别感谢 [nav-item](https://github.com/eooce/nav-item) 提供的灵感与基础。
 
 ---
 
-⭐ 如果你喜欢这个项目，请点个 Star 鼓励一下！
+⭐ 如果这个项目对你有帮助，请点个 Star 支持一下！
 
 ## 🤝 贡献
+
 欢迎提交 Issue 和 Pull Request！
 
 ## 📞 支持
+
 - [GitHub Issues](https://github.com/zczy-k/SmartNavora/issues)
 - [更新日志](https://github.com/zczy-k/SmartNavora/releases)
