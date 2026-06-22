@@ -2142,6 +2142,8 @@ let sseReconnectTimer = null;
 let isRefreshing = false;
 let deferredDataTimer = null;
 let deferredSearchTimer = null;
+let frequentRefreshTimer = null;
+let frequentRefreshDebounceTimer = null;
 
 async function loadDeferredHomeData(cacheData) {
   const [promosRes, friendsRes, enginesRes] = await Promise.allSettled([
@@ -2354,6 +2356,11 @@ onUnmounted(() => {
   if (searchDebounceTimer) {
     clearTimeout(searchDebounceTimer);
   }
+  stopFrequentPolling();
+  if (frequentRefreshDebounceTimer) {
+    clearTimeout(frequentRefreshDebounceTimer);
+    frequentRefreshDebounceTimer = null;
+  }
   if (versionCheckTimer) {
     clearInterval(versionCheckTimer);
     versionCheckTimer = null;
@@ -2452,8 +2459,6 @@ function handleContainerClick(event) {
     const cardInView = cards.value.find(c => c.id === cardId);
     if (cardInView) {
       cardInView.click_count = (cardInView.click_count || 0) + 1;
-      // 触发计算属性重算：虽然修改了内部属性，但由于 sortedFilteredCards 是基于 cards.value 的浅拷贝 [...cards.value]
-      // 我们需要通过重新赋值来确保 Vue 追踪到这个变化，或者直接触发重算
       cards.value = [...cards.value];
     }
     
@@ -2468,17 +2473,28 @@ function handleContainerClick(event) {
       const cachedCards = cardsCache.value[key];
       const card = cachedCards.find(c => c.id === cardId);
       if (card) {
-        if (!cardInView) { // 如果没在视图中（虽然不太可能）也更新一下
+        if (!cardInView) {
           card.click_count = (card.click_count || 0) + 1;
         }
         break;
       }
     }
     saveCardsCache();
+    
+    // 4. 延迟刷新常用列表，使点击的卡片能动态排序
+    if (isFrequentView.value) {
+      // 本地先提升该卡片的排序权重（临时优化视觉反馈）
+      const freqCard = frequentCards.value.find(c => c.id === cardId);
+      if (freqCard) {
+        freqCard.click_count = (freqCard.click_count || 0) + 1;
+      }
+      debouncedRefreshFrequent();
+    }
   }
 
 async function selectMenu(menu, parentMenu = null) {
   isFrequentView.value = false;
+  stopFrequentPolling();
   if (parentMenu) {
     activeMenu.value = parentMenu;
     activeSubMenu.value = menu;
@@ -2505,6 +2521,7 @@ async function handleSelectFrequent() {
   activeSubMenu.value = null;
   searchQuery.value = '';
   await loadFrequentCards();
+  startFrequentPolling();
 }
 
 // 常用卡片缓存
@@ -2549,8 +2566,38 @@ async function loadFrequentCards() {
   }
 }
 
+// 防抖刷新常用卡片（点击后延迟 2s 再刷新，避免频繁请求）
+function debouncedRefreshFrequent() {
+  if (frequentRefreshDebounceTimer) {
+    clearTimeout(frequentRefreshDebounceTimer);
+  }
+  frequentRefreshDebounceTimer = setTimeout(() => {
+    if (isFrequentView.value) {
+      loadFrequentCards();
+    }
+  }, 2000);
+}
+
+// 启动常用轮询（每 30 秒自动刷新）
+function startFrequentPolling() {
+  stopFrequentPolling();
+  frequentRefreshTimer = setInterval(() => {
+    if (document.visibilityState === 'visible' && isFrequentView.value) {
+      loadFrequentCards();
+    }
+  }, 30000);
+}
+
+function stopFrequentPolling() {
+  if (frequentRefreshTimer) {
+    clearInterval(frequentRefreshTimer);
+    frequentRefreshTimer = null;
+  }
+}
+
 function handleDrawerMenuSelect(menu) {
   isFrequentView.value = false;
+  stopFrequentPolling();
   activeMenu.value = menu;
   activeSubMenu.value = null;
   loadCards();

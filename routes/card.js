@@ -437,16 +437,25 @@ router.get('/', (req, res) => {
   });
 });
 
-// 获取常用卡片（高频优先，不足时用最近添加的卡片补齐）
+// 获取常用卡片（按点击时间和频率综合排序，时间衰减）
 router.get('/frequent', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  // 排序策略：
+  // 1. 最近 7 天点击过的卡片优先（last_clicked_at）
+  // 2. 按点击时间衰减排序：越近点击的越靠前
+  // 3. 同一天点击的，按点击次数降序
+  // 4. 从未点击的，按 id 降序（最新添加的在前）补齐
   const sql = `
     SELECT c.*, m.name as menu_name, sm.name as sub_menu_name
     FROM cards c
     LEFT JOIN menus m ON c.menu_id = m.id
     LEFT JOIN sub_menus sm ON c.sub_menu_id = sm.id
     ORDER BY
-      CASE WHEN c.click_count > 0 THEN 0 ELSE 1 END,
+      CASE WHEN c.last_clicked_at IS NOT NULL AND julianday('now') - julianday(c.last_clicked_at) < 7 THEN 0
+           WHEN c.click_count > 0 THEN 1
+           ELSE 2
+      END,
+      CASE WHEN c.last_clicked_at IS NOT NULL THEN julianday('now') - julianday(c.last_clicked_at) ELSE 999 END,
       c.click_count DESC,
       c.id DESC
     LIMIT ?
@@ -713,12 +722,12 @@ router.post('/:id/click', (req, res) => {
   const cardId = req.params.id;
   
   db.run(
-    'UPDATE cards SET click_count = COALESCE(click_count, 0) + 1 WHERE id = ?',
+    'UPDATE cards SET click_count = COALESCE(click_count, 0) + 1, last_clicked_at = CURRENT_TIMESTAMP WHERE id = ?',
     [cardId],
     function(err) {
       if (err) return res.status(500).json({ error: err.message });
       if (this.changes === 0) return res.status(404).json({ error: '卡片不存在' });
-      res.json({ success: true });
+      res.json({ success: true, last_clicked_at: new Date().toISOString() });
     }
   );
 });

@@ -197,6 +197,9 @@ async function initializeDatabase() {
     try {
       await dbRun(`ALTER TABLE cards ADD COLUMN section TEXT DEFAULT ''`);
     } catch (e) { }
+    try {
+      await dbRun(`ALTER TABLE cards ADD COLUMN last_clicked_at TEXT`);
+    } catch (e) { }
     // 为旧卡片设置默认创建时间
     try {
       await dbRun(`UPDATE cards SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL`);
