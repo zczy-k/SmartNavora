@@ -437,6 +437,26 @@ router.get('/', (req, res) => {
   });
 });
 
+// 获取常用卡片（高频优先，不足时用最近添加的卡片补齐）
+router.get('/frequent', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  const sql = `
+    SELECT c.*, m.name as menu_name, sm.name as sub_menu_name
+    FROM cards c
+    LEFT JOIN menus m ON c.menu_id = m.id
+    LEFT JOIN sub_menus sm ON c.sub_menu_id = sm.id
+    ORDER BY
+      CASE WHEN c.click_count > 0 THEN 0 ELSE 1 END,
+      c.click_count DESC,
+      c.id DESC
+    LIMIT ?
+  `;
+  db.all(sql, [limit], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows);
+  });
+});
+
 // 获取指定菜单的卡片
 router.get('/:menuId', (req, res) => {
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -701,26 +721,6 @@ router.post('/:id/click', (req, res) => {
       res.json({ success: true });
     }
   );
-});
-
-// 获取常用卡片（高频优先，不足时用最近添加的卡片补齐）
-router.get('/frequent', (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
-  const sql = `
-    SELECT c.*, m.name as menu_name, sm.name as sub_menu_name
-    FROM cards c
-    LEFT JOIN menus m ON c.menu_id = m.id
-    LEFT JOIN sub_menus sm ON c.sub_menu_id = sm.id
-    ORDER BY
-      CASE WHEN c.click_count > 0 THEN 0 ELSE 1 END,
-      c.click_count DESC,
-      c.id DESC
-    LIMIT ?
-  `;
-  db.all(sql, [limit], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
-  });
 });
 
 // 批量删除重复卡片
