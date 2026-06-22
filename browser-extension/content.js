@@ -1330,15 +1330,12 @@
                       font-weight: 400;
                   }
                   .section-suggestions {
-                      position: absolute;
-                      left: 60px;
-                      right: 0;
-                      top: 100%;
+                      position: fixed;
                       background: #fff;
                       border: 1px solid #e2e5e8;
                       border-radius: 6px;
                       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-                      max-height: 150px;
+                      max-height: 200px;
                       overflow-y: auto;
                       z-index: 100;
                   }
@@ -1724,6 +1721,12 @@
                       const sectionInput = dialogShadowRoot.getElementById('confirmSectionText');
                       const suggestionsBox = dialogShadowRoot.getElementById('sectionSuggestions');
                       if (sectionInput && suggestionsBox) {
+                          function updateSuggestionsPosition() {
+                              const rect = sectionInput.getBoundingClientRect();
+                              suggestionsBox.style.left = rect.left + 'px';
+                              suggestionsBox.style.top = (rect.bottom + 2) + 'px';
+                              suggestionsBox.style.width = rect.width + 'px';
+                          }
                           function showSuggestions(filter) {
                               const q = (filter || '').toLowerCase();
                               const filtered = loadedSections.filter(s => !q || s.toLowerCase().includes(q));
@@ -1734,6 +1737,7 @@
                               suggestionsBox.innerHTML = filtered.map(s =>
                                   `<div class="section-suggestion-item" data-value="${escapeHtml(s)}">${escapeHtml(s)}</div>`
                               ).join('');
+                              updateSuggestionsPosition();
                               suggestionsBox.style.display = 'block';
                           }
                           sectionInput.addEventListener('focus', () => showSuggestions(sectionInput.value));
@@ -1749,6 +1753,13 @@
                           sectionInput.addEventListener('blur', () => {
                               setTimeout(() => { suggestionsBox.style.display = 'none'; }, 150);
                           });
+                          // 弹窗滚动时隐藏下拉框（fixed定位不会跟随滚动）
+                          const scrollParent = sectionInput.closest('.dialog-body');
+                          if (scrollParent) {
+                              scrollParent.addEventListener('scroll', () => {
+                                  suggestionsBox.style.display = 'none';
+                              });
+                          }
                       }
                   });
                   checkDuplicateForConfirmation(url, customTitle);
