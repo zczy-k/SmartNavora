@@ -1056,7 +1056,7 @@
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch } from 'vue';
-import { getMenus, getCards, getAllCards, getFrequentCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, getCardSections, instance as apiInstance } from '../api';
+import { getMenus, getCards, getAllCards, getFrequentCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, getCardSections, removeFromFrequent, instance as apiInstance } from '../api';
 
 // AI API 调用（使用 api.js 的 instance 以确保全局 401 拦截器生效）
 const api = {
@@ -3896,7 +3896,11 @@ function handleContextEdit(card) {
 }
 
 function handleContextDelete(card) {
-  requireAuth(() => handleDeleteCard(card));
+  if (isFrequentView.value) {
+    handleRemoveFromFrequent(card);
+  } else {
+    requireAuth(() => handleDeleteCard(card));
+  }
 }
 
 function handleRequireAuth(callback) {
@@ -4589,6 +4593,18 @@ async function moveCardToCategory(menuId, subMenuId) {
     updateProgress(`移动失败：${error.response?.data?.error || error.message}`, 'error');
   } finally {
     isMovingCards.value = false;
+  }
+}
+
+async function handleRemoveFromFrequent(card) {
+  if (!confirm(`确定要将「${card.title}」从常用列表中移除吗？\n（不会删除卡片本身，只是清除点击记录）`)) return;
+
+  try {
+    await removeFromFrequent(card.id);
+    frequentCards.value = frequentCards.value.filter(c => c.id !== card.id);
+    localStorage.setItem(FREQUENT_CACHE_KEY, JSON.stringify(frequentCards.value));
+  } catch (err) {
+    alert('移除失败: ' + (err.response?.data?.error || err.message));
   }
 }
 

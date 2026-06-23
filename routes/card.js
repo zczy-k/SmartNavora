@@ -732,6 +732,21 @@ router.post('/:id/click', (req, res) => {
   );
 });
 
+// 从常用列表移除（重置点击统计，不删除卡片本身）
+router.post('/:id/reset-frequent', (req, res) => {
+  const cardId = req.params.id;
+  
+  db.run(
+    'UPDATE cards SET click_count = 0, last_clicked_at = NULL WHERE id = ?',
+    [cardId],
+    function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      if (this.changes === 0) return res.status(404).json({ error: '卡片不存在' });
+      res.json({ success: true });
+    }
+  );
+});
+
 // 批量删除重复卡片
 router.post('/remove-duplicates', auth, (req, res) => {
   const { cardIds } = req.body;

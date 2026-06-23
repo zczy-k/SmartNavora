@@ -139,6 +139,7 @@ export const addCard = (data) => instance.post(`/cards`, data);
 export const updateCard = (id, data) => instance.put(`/cards/${id}`, data);
 export const deleteCard = (id) => instance.delete(`/cards/${id}`);
 export const batchUpdateCards = (cards) => instance.patch(`/cards/batch-update`, { cards });
+export const removeFromFrequent = (cardId) => instance.post(`/cards/${cardId}/reset-frequent`);
 
 // 宣传API
 export const getPromos = () => instance.get(`/promos`);
