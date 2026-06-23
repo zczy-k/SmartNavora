@@ -488,7 +488,6 @@ function isCardSelected(card) {
   height: 92px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
   position: relative;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -509,6 +508,7 @@ function isCardSelected(card) {
   touch-action: manipulation;
   animation: cardFadeIn 0.35s ease both;
   animation-delay: calc(var(--card-index, 0) * 25ms);
+  overflow: hidden;
 }
 
 .link-item:hover {
@@ -616,8 +616,8 @@ function isCardSelected(card) {
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 100%;
-  padding: 10px 8px;
+  flex: 1;
+  padding: 10px 8px 4px;
   box-sizing: border-box;
   position: relative;
   z-index: 1;
@@ -751,19 +751,18 @@ function isCardSelected(card) {
 }
 
 .card-source-tag {
-  position: absolute;
-  bottom: 4px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.5);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.75);
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
+  padding: 2px 8px;
+  margin-bottom: 6px;
+  border-radius: 4px;
   white-space: nowrap;
   max-width: 90%;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+  flex-shrink: 0;
+  z-index: 1;
 }
 </style>
