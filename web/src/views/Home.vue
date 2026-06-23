@@ -4602,7 +4602,10 @@ async function handleRemoveFromFrequent(card) {
   try {
     await removeFromFrequent(card.id);
     frequentCards.value = frequentCards.value.filter(c => c.id !== card.id);
-    localStorage.setItem(FREQUENT_CACHE_KEY, JSON.stringify(frequentCards.value));
+    localStorage.setItem(FREQUENT_CACHE_KEY, JSON.stringify({
+      data: frequentCards.value,
+      timestamp: Date.now()
+    }));
   } catch (err) {
     alert('移除失败: ' + (err.response?.data?.error || err.message));
   }

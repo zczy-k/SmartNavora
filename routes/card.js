@@ -444,16 +444,16 @@ router.get('/frequent', (req, res) => {
   // 1. 最近 7 天点击过的卡片优先（last_clicked_at）
   // 2. 按点击时间衰减排序：越近点击的越靠前
   // 3. 同一天点击的，按点击次数降序
-  // 4. 从未点击的，按 id 降序（最新添加的在前）补齐
+  // 注意：只显示有过点击记录的卡片，从未点击的不进入常用列表
   const sql = `
     SELECT c.*, m.name as menu_name, sm.name as sub_menu_name
     FROM cards c
     LEFT JOIN menus m ON c.menu_id = m.id
     LEFT JOIN sub_menus sm ON c.sub_menu_id = sm.id
+    WHERE c.click_count > 0 OR c.last_clicked_at IS NOT NULL
     ORDER BY
       CASE WHEN c.last_clicked_at IS NOT NULL AND julianday('now') - julianday(c.last_clicked_at) < 7 THEN 0
-           WHEN c.click_count > 0 THEN 1
-           ELSE 2
+           ELSE 1
       END,
       CASE WHEN c.last_clicked_at IS NOT NULL THEN julianday('now') - julianday(c.last_clicked_at) ELSE 999 END,
       c.click_count DESC,
