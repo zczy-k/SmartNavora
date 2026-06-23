@@ -3904,7 +3904,7 @@ function handleRequireAuth(callback) {
 }
 
 function handleToggleCardSelection(card) {
-  requireAuth(() => toggleCardSelection(card));
+  toggleCardSelection(card);
 }
 
 // 打开移动面板

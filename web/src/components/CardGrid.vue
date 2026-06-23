@@ -83,7 +83,7 @@
 </template>
 
 <script setup>
-import { ref, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onUnmounted, watch, nextTick } from 'vue';
 import { useIconLoader } from '../composables/useIconLoader';
 
 const props = defineProps({
@@ -322,8 +322,10 @@ function truncate(str) {
   return str.length > 20 ? str.slice(0, 20) + '...' : str;
 }
 
+const selectedCardIds = computed(() => new Set(props.selectedCards?.map(c => c.id) || []));
+
 function isCardSelected(card) {
-  return props.selectedCards?.some(c => c.id === card.id) || false;
+  return selectedCardIds.value.has(card.id);
 }
 </script>
 
@@ -586,9 +588,9 @@ function isCardSelected(card) {
 }
 
 .link-item.selected {
-  border: 2px solid rgba(99, 179, 237, 0.85);
+  border-color: rgba(99, 179, 237, 0.85);
   box-shadow: 
-    0 0 0 4px rgba(99, 179, 237, 0.25), 
+    0 0 0 2px rgba(99, 179, 237, 0.25), 
     0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
