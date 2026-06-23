@@ -42,6 +42,7 @@
     
     <Teleport to="body">
       <div v-if="contextMenuVisible" 
+           ref="contextMenuRef"
            class="context-menu"
            :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
            @click.stop>
@@ -82,7 +83,7 @@
 </template>
 
 <script setup>
-import { ref, onUnmounted, watch } from 'vue';
+import { ref, onUnmounted, watch, nextTick } from 'vue';
 import { useIconLoader } from '../composables/useIconLoader';
 
 const props = defineProps({
@@ -153,49 +154,33 @@ const contextMenuVisible = ref(false);
 const contextMenuX = ref(0);
 const contextMenuY = ref(0);
 const contextMenuCard = ref(null);
+const contextMenuRef = ref(null);
 const hoveredCardId = ref(null);
 
-async function handleContextMenu(event, card) {
+function handleContextMenu(event, card) {
   contextMenuCard.value = card;
+  contextMenuX.value = event.clientX;
+  contextMenuY.value = event.clientY;
   contextMenuVisible.value = true;
-  
-  const x = event.clientX;
-  const y = event.clientY;
-  
-  // Use nextTick to ensure the menu is in the DOM before measuring
-  const { nextTick } = await import('vue');
-  await nextTick();
-  
-  const menu = document.querySelector('.context-menu');
-  if (menu) {
+
+  nextTick(() => {
+    const menu = contextMenuRef.value;
+    if (!menu) return;
     const menuWidth = menu.offsetWidth;
     const menuHeight = menu.offsetHeight;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-    
-    let finalX = x;
-    let finalY = y;
-    
-    // Adjust horizontal position
-    if (x + menuWidth > viewportWidth) {
-      finalX = viewportWidth - menuWidth - 10;
-    }
-    
-    // Adjust vertical position
-    if (y + menuHeight > viewportHeight) {
-      finalY = viewportHeight - menuHeight - 10;
-    }
-    
-    // Ensure it doesn't go off the left or top edge either
-    finalX = Math.max(10, finalX);
-    finalY = Math.max(10, finalY);
-    
-    contextMenuX.value = finalX;
-    contextMenuY.value = finalY;
-  } else {
-    contextMenuX.value = x;
-    contextMenuY.value = y;
-  }
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let fx = event.clientX;
+    let fy = event.clientY;
+    if (fx + menuWidth > vw) fx = vw - menuWidth - 10;
+    if (fy + menuHeight > vh) fy = vh - menuHeight - 10;
+    fx = Math.max(10, fx);
+    fy = Math.max(10, fy);
+
+    contextMenuX.value = fx;
+    contextMenuY.value = fy;
+  });
 }
 
 function closeContextMenu() {
