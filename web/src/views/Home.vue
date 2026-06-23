@@ -4597,7 +4597,7 @@ async function moveCardToCategory(menuId, subMenuId) {
 }
 
 async function handleRemoveFromFrequent(card) {
-  if (!confirm(`确定要将「${card.title}」从常用列表中移除吗？\n（不会删除卡片本身，只是清除点击记录）`)) return;
+  if (!confirm(`确定要将「${card.title}」从常用列表中移除吗？\n\n这只是清除点击记录，不会删除卡片本身。\n如需彻底删除，请到对应分类视图中操作。`)) return;
 
   try {
     await removeFromFrequent(card.id);
