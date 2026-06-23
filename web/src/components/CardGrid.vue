@@ -508,7 +508,6 @@ function isCardSelected(card) {
   touch-action: manipulation;
   animation: cardFadeIn 0.35s ease both;
   animation-delay: calc(var(--card-index, 0) * 25ms);
-  overflow: hidden;
 }
 
 .link-item:hover {
@@ -617,10 +616,11 @@ function isCardSelected(card) {
   justify-content: center;
   width: 100%;
   flex: 1;
-  padding: 10px 8px 4px;
+  padding: 6px 8px 2px;
   box-sizing: border-box;
   position: relative;
   z-index: 1;
+  overflow: hidden;
   -webkit-touch-callout: none;
   -webkit-user-drag: none;
   -webkit-tap-highlight-color: transparent;
@@ -664,6 +664,7 @@ function isCardSelected(card) {
   line-height: 1.4;
   letter-spacing: 0.01em;
   pointer-events: none;
+  max-height: calc(1.4em * 2);
 }
 
 .card-selected-badge {
