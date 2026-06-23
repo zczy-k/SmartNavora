@@ -1907,5 +1907,3 @@ async function autoGenerateForCards(cardIds) {
 
 module.exports = router;
 module.exports.autoGenerateForCards = autoGenerateForCards;
-module.exports.analyzePageType = analyzePageType;
-module.exports.getPageTypeDescription = getPageTypeDescription;

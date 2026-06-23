@@ -155,16 +155,6 @@ export function extractDomain(url) {
   }
 }
 
-/**
- * 判断两个卡片是否重复
- * @param {object} card1 - 卡片1
- * @param {object} card2 - 卡片2
- * @returns {boolean} 是否重复
- */
-export function isDuplicateCard(card1, card2) {
-  return !!getDuplicateMatch(card1, card2);
-}
-
 export function getDuplicateMatch(card1, card2) {
   if (!card1 || !card2) {
     return null;

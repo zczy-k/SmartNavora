@@ -81,12 +81,8 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import axios from 'axios';
+import { getPromos, addPromo, updatePromo, deletePromo } from '../../api';
 import { useDataSync } from '../../composables/useDataSync';
-
-const BASE = '/api';
-const getToken = () => localStorage.getItem('token') || '';
-const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` });
 
 const allPromos = ref([]);
 const loading = ref(false);
@@ -110,7 +106,7 @@ async function loadPromos() {
   loading.value = true;
   loadingText.value = '加载中...';
   try {
-    const res = await axios.get(`${BASE}/promos`);
+    const res = await getPromos();
     let items = [];
     if (Array.isArray(res.data)) {
       items = res.data;
@@ -134,7 +130,7 @@ async function handleAdd() {
   loading.value = true;
   loadingText.value = '添加中...';
   try {
-    await axios.post(`${BASE}/promos`, form.value, { headers: authHeaders() });
+    await addPromo(form.value);
     form.value = { img: '', url: '', position: 'left' };
     await loadPromos();
   } catch (err) {
@@ -145,7 +141,7 @@ async function handleAdd() {
 
 async function handleUpdate(item) {
   try {
-    await axios.put(`${BASE}/promos/${item.id}`, { img: item.img, url: item.url }, { headers: authHeaders() });
+    await updatePromo(item.id, { img: item.img, url: item.url });
   } catch (err) {
     alert('更新失败: ' + (err.response?.data?.error || err.message));
     await loadPromos();
@@ -157,7 +153,7 @@ async function handleDelete(item) {
   loading.value = true;
   loadingText.value = '删除中...';
   try {
-    await axios.delete(`${BASE}/promos/${item.id}`, { headers: authHeaders() });
+    await deletePromo(item.id);
     await loadPromos();
   } catch (err) {
     alert('删除失败: ' + (err.response?.data?.error || err.message));

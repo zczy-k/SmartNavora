@@ -116,7 +116,6 @@ export const updateMenu = (id, data) => instance.put(`/menus/${id}`, data);
 export const deleteMenu = (id) => instance.delete(`/menus/${id}`);
 
 // 子菜单相关API
-export const getSubMenus = (menuId) => instance.get(`/menus/${menuId}/submenus`);
 export const addSubMenu = (menuId, data) => instance.post(`/menus/${menuId}/submenus`, data);
 export const updateSubMenu = (id, data) => instance.put(`/menus/submenus/${id}`, data);
 export const deleteSubMenu = (id) => instance.delete(`/menus/submenus/${id}`);
@@ -141,12 +140,6 @@ export const updateCard = (id, data) => instance.put(`/cards/${id}`, data);
 export const deleteCard = (id) => instance.delete(`/cards/${id}`);
 export const batchUpdateCards = (cards) => instance.patch(`/cards/batch-update`, { cards });
 
-export const uploadLogo = (file) => {
-  const formData = new FormData();
-  formData.append('logo', file);
-  return instance.post(`/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-};
-
 // 宣传API
 export const getPromos = () => instance.get(`/promos`);
 export const addPromo = (data) => instance.post(`/promos`, data);
@@ -163,20 +156,16 @@ export const deleteFriend = (id) => instance.delete(`/friends/${id}`);
 export const getUserProfile = () => instance.get(`/users/profile`);
 export const changeUsername = (newUsername) => instance.put(`/users/username`, { newUsername });
 export const changePassword = (oldPassword, newPassword) => instance.put(`/users/password`, { oldPassword, newPassword });
-export const getUsers = () => instance.get(`/users`);
 
 // 批量添加API
 export const batchParseUrls = (urls) => instance.post(`/batch/parse`, { urls });
 export const batchAddCards = (menuId, subMenuId, cards) => instance.post(`/batch/add`, { menu_id: menuId, sub_menu_id: subMenuId, cards });
-export const batchCheckUrls = (urls) => instance.post(`/batch/check-urls`, { urls });
 
 // 搜索引擎API
 export const getSearchEngines = () => instance.get(`/search-engines`);
 export const parseSearchEngine = (url) => instance.post(`/search-engines/parse`, { url });
 export const addSearchEngine = (data) => instance.post(`/search-engines`, data);
-export const updateSearchEngine = (id, data) => instance.put(`/search-engines/${id}`, data);
 export const deleteSearchEngine = (id) => instance.delete(`/search-engines/${id}`);
-export const reorderSearchEngines = (engines) => instance.post(`/search-engines/reorder`, { engines });
 
 // 卡片去重API
 export const detectDuplicates = () => instance.get(`/cards/detect-duplicates/all?_t=${Date.now()}`);
@@ -184,27 +173,10 @@ export const removeDuplicates = (cardIds) => instance.post(`/cards/remove-duplic
 export const removeManyCards = (cardIds) => instance.post(`/cards/remove-many`, { cardIds });
 export const checkWebdavVersion = () => instance.get(`/backup/webdav/version-check?_t=${Date.now()}`);
 
-// 备份API
-export const createBackup = (name, description) => instance.post(`/backup/create`, { name, description });
-export const getBackupList = () => instance.get(`/backup/list`);
-export const downloadBackup = (filename) => {
-  const token = localStorage.getItem('token');
-  return `${BASE}/backup/download/${filename}?token=${token}`;
-};
-export const deleteBackup = (filename) => instance.delete(`/backup/delete/${filename}`);
-export const renameBackup = (filename, newName) => instance.put(`/backup/rename/${filename}`, { newName });
-export const uploadBackup = (file) => {
-  const formData = new FormData();
-  formData.append('backup', file);
-  return instance.post(`/backup/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-};
-export const restoreBackup = (filename) => instance.post(`/backup/restore/${filename}`);
-
 // 数据版本号API（用于缓存同步）
 export const getDataVersion = () => instance.get(`/data-version`);
 
 // AI 批量生成 API
-export const aiGetStatus = () => instance.get(`/ai/status`);
 export const aiGetConfig = (provider = null) => {
   const params = provider ? { provider } : {};
   return instance.get(`/ai/config`, { params });
@@ -216,5 +188,4 @@ export const aiGetStats = () => instance.get(`/ai/stats`);
 export const aiFilterCards = (filters) => instance.post(`/ai/filter-cards`, filters);
 export const aiPreview = (data) => instance.post(`/ai/preview`, data);
 export const aiStartBatchTask = (data) => instance.post(`/ai/batch-task/start`, data);
-export const aiGetTaskStatus = () => instance.get(`/ai/batch-task/status`);
 export const aiStopTask = () => instance.post(`/ai/batch-task/stop`, {});

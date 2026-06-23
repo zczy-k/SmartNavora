@@ -50,15 +50,7 @@ function broadcastVersionChange(version, clientId = null, payload = null) {
   });
 }
 
-/**
- * 获取当前连接数
- */
-function getClientCount() {
-  return clients.size;
-}
-
 module.exports = {
   addClient,
-  broadcastVersionChange,
-  getClientCount
+  broadcastVersionChange
 };
