@@ -439,6 +439,7 @@ router.get('/', (req, res) => {
 
 // 获取常用卡片（按点击时间和频率综合排序，时间衰减）
 router.get('/frequent', (req, res) => {
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   const limit = Math.min(parseInt(req.query.limit) || 20, 50);
   // 排序策略：
   // 1. 最近 7 天点击过的卡片优先（last_clicked_at）

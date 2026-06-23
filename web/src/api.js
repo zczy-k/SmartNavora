@@ -134,7 +134,11 @@ export const getAllCards = (noCache = false) => {
   return instance.get(`/cards`, { params });
 };
 // 获取常用卡片（按点击次数降序）
-export const getFrequentCards = (limit = 20) => instance.get('/cards/frequent', { params: { limit } });
+export const getFrequentCards = (limit = 20, noCache = false) => {
+  const params = { limit };
+  if (noCache) params._t = Date.now();
+  return instance.get('/cards/frequent', { params });
+};
 export const addCard = (data) => instance.post(`/cards`, data);
 export const updateCard = (id, data) => instance.put(`/cards/${id}`, data);
 export const deleteCard = (id) => instance.delete(`/cards/${id}`);

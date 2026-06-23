@@ -2552,7 +2552,7 @@ function loadFrequentCardsFromCache() {
 async function loadFrequentCards() {
   isFrequentLoading.value = true;
   try {
-    const { data } = await getFrequentCards(20);
+    const { data } = await getFrequentCards(20, true);
     frequentCards.value = data;
     // 写入缓存，下次秒开
     try {
