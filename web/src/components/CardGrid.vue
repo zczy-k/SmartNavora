@@ -32,11 +32,11 @@
             <span class="link-text" @contextmenu.prevent>{{ truncate(card.title) }}</span>
           </a>
         <div v-if="isCardSelected(card)" class="card-selected-badge">✓</div>
-        <div v-if="hoveredCardId === card.id && !selectionMode && card.desc" class="card-tooltip">
-          <div class="tooltip-content">{{ getTooltip(card) }}</div>
-        </div>
-        <div v-if="showSource && (card.menu_name || card.sub_menu_name)" class="card-source-tag" @click.stop>
-          {{ card.sub_menu_name ? card.menu_name + ' › ' + card.sub_menu_name : card.menu_name }}
+        <div v-if="hoveredCardId === card.id && !selectionMode && (card.desc || card.menu_name)" class="card-tooltip">
+          <div class="tooltip-content">
+            <div v-if="card.desc" class="tooltip-desc">{{ card.desc }}</div>
+            <div v-if="showSource && card.menu_name" class="tooltip-source">{{ card.sub_menu_name ? card.menu_name + ' › ' + card.sub_menu_name : card.menu_name }}</div>
+          </div>
         </div>
       </div>
     
@@ -332,12 +332,6 @@ function onImgError(e, card) {
   }
 }
 
-function getTooltip(card) {
-  if (!card.desc) return '';
-  const maxLen = 50;
-  return card.desc.length > maxLen ? card.desc.slice(0, maxLen) + '…' : card.desc;
-}
-
 function truncate(str) {
   if (!str) return '';
   return str.length > 20 ? str.slice(0, 20) + '...' : str;
@@ -537,7 +531,7 @@ function isCardSelected(card) {
   z-index: 100;
   pointer-events: none;
   width: max-content;
-  max-width: 220px;
+  max-width: 240px;
 }
 
 .card-tooltip .tooltip-content {
@@ -545,17 +539,35 @@ function isCardSelected(card) {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: rgba(255, 255, 255, 0.92);
-  padding: 6px 12px;
+  padding: 8px 12px;
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.5;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   word-break: break-word;
   text-align: left;
+}
+
+.tooltip-desc {
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.tooltip-source {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-tooltip .tooltip-content:has(.tooltip-desc) .tooltip-source {
+  margin-top: 6px;
 }
 
 .link-item:hover .card-tooltip {
@@ -749,21 +761,5 @@ function isCardSelected(card) {
   height: 1px;
   background: rgba(0, 0, 0, 0.08);
   margin: 4px 0;
-}
-
-.card-source-tag {
-  background: rgba(0, 0, 0, 0.45);
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 10px;
-  padding: 2px 8px;
-  margin-bottom: 6px;
-  border-radius: 4px;
-  white-space: nowrap;
-  max-width: 90%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  pointer-events: none;
-  flex-shrink: 0;
-  z-index: 1;
 }
 </style>
