@@ -781,6 +781,16 @@
                   {{ aiGeneratingName ? '⏳' : '✨' }}
                 </button>
               </div>
+              <div v-if="aiOptions.field === 'title'" class="ai-options-popover">
+                <div v-if="aiOptions.loading" class="ai-options-loading">生成中…</div>
+                <template v-else>
+                  <div v-for="(opt, i) in aiOptions.list" :key="i" class="ai-option-item" @click="applyAIOption('title', opt)">{{ opt }}</div>
+                  <div class="ai-options-actions">
+                    <button type="button" @click="generateAIName" class="ai-option-regen">换一批</button>
+                    <button type="button" @click="closeAIOptions" class="ai-option-cancel">取消</button>
+                  </div>
+                </template>
+              </div>
             </div>
             <div class="form-group">
               <label>网址</label>
@@ -818,6 +828,16 @@
                 >
                   {{ aiGenerating ? '⏳' : '✨' }}
                 </button>
+              </div>
+              <div v-if="aiOptions.field === 'desc'" class="ai-options-popover">
+                <div v-if="aiOptions.loading" class="ai-options-loading">生成中…</div>
+                <template v-else>
+                  <div v-for="(opt, i) in aiOptions.list" :key="i" class="ai-option-item ai-option-desc" @click="applyAIOption('desc', opt)">{{ opt }}</div>
+                  <div class="ai-options-actions">
+                    <button type="button" @click="generateAIDescription" class="ai-option-regen">换一批</button>
+                    <button type="button" @click="closeAIOptions" class="ai-option-cancel">取消</button>
+                  </div>
+                </template>
               </div>
             </div>
             <div class="form-group">
@@ -1382,6 +1402,8 @@ const aiGenerating = ref(false);
 const aiGeneratingTags = ref(false);
 const aiGeneratingName = ref(false);
 const aiConfigured = ref(false); // AI 是否已配置
+// AI 多候选点选状态：field='title'|'desc'，list=候选数组，loading=生成中
+const aiOptions = ref({ field: null, list: [], loading: false });
 
 // 批量移动相关状态
 const selectedCards = ref([]);
@@ -4739,72 +4761,70 @@ function getFriendlyAIErrorMessage(err) {
   return serverMessage || 'AI 服务不可用，请先在后台检查 AI 配置。';
 }
 
-// AI 生成名称
+// AI 生成名称（多候选点选）
 async function generateAIName() {
   if (!cardEditForm.value.url) {
     showToastMessage('请先输入网址', 'error');
     return;
   }
-  
+  aiOptions.value = { field: 'title', list: [], loading: true };
   aiGeneratingName.value = true;
   try {
-    const res = await api.post('/api/ai/generate', {
+    const res = await api.post('/api/ai/generate-options', {
       type: 'name',
-      card: {
-        title: cardEditForm.value.title || '',
-        url: cardEditForm.value.url
-      }
+      card: { title: cardEditForm.value.title || '', url: cardEditForm.value.url }
     });
-    
-    if (res.data.success && res.data.name) {
-        if (res.data.unchanged?.name) {
-          showToastMessage('生成结果与当前相同，无需更新', 'info');
-        } else {
-          cardEditForm.value.title = res.data.name;
-          showToastMessage('名称生成成功', 'success');
-        }
-      } else {
-        showToastMessage(res.data.message || 'AI 生成失败', 'error');
-      }
+    if (res.data.success && res.data.candidates?.length) {
+      aiOptions.value = { field: 'title', list: res.data.candidates, loading: false };
+    } else {
+      aiOptions.value = { field: null, list: [], loading: false };
+      showToastMessage(res.data.message || 'AI 生成失败，请手动输入或重试', 'error');
+    }
   } catch (err) {
+    aiOptions.value = { field: null, list: [], loading: false };
     showToastMessage(getFriendlyAIErrorMessage(err), 'error');
   } finally {
     aiGeneratingName.value = false;
   }
 }
 
-// AI 生成描述
+// AI 生成描述（多候选点选）
 async function generateAIDescription() {
   if (!cardEditForm.value.url) {
     showToastMessage('请先输入网址', 'error');
     return;
   }
-  
+  aiOptions.value = { field: 'desc', list: [], loading: true };
   aiGenerating.value = true;
   try {
-    const res = await api.post('/api/ai/generate', {
+    const res = await api.post('/api/ai/generate-options', {
       type: 'description',
-      card: {
-        title: cardEditForm.value.title || '',
-        url: cardEditForm.value.url
-      }
+      card: { title: cardEditForm.value.title || '', url: cardEditForm.value.url }
     });
-    
-    if (res.data.success && res.data.description) {
-        if (res.data.unchanged?.description) {
-          showToastMessage('生成结果与当前相同，无需更新', 'info');
-        } else {
-          cardEditForm.value.desc = res.data.description;
-          showToastMessage('描述生成成功', 'success');
-        }
-      } else {
-        showToastMessage(res.data.message || 'AI 生成失败', 'error');
-      }
+    if (res.data.success && res.data.candidates?.length) {
+      aiOptions.value = { field: 'desc', list: res.data.candidates, loading: false };
+    } else {
+      aiOptions.value = { field: null, list: [], loading: false };
+      showToastMessage(res.data.message || 'AI 生成失败，请手动输入或重试', 'error');
+    }
   } catch (err) {
+    aiOptions.value = { field: null, list: [], loading: false };
     showToastMessage(getFriendlyAIErrorMessage(err), 'error');
   } finally {
     aiGenerating.value = false;
   }
+}
+
+// 应用某个候选到对应字段
+function applyAIOption(field, value) {
+  if (field === 'title') cardEditForm.value.title = value;
+  else if (field === 'desc') cardEditForm.value.desc = value;
+  aiOptions.value = { field: null, list: [], loading: false };
+  showToastMessage(field === 'title' ? '已应用名称' : '已应用描述', 'success');
+}
+// 关闭候选气泡
+function closeAIOptions() {
+  aiOptions.value = { field: null, list: [], loading: false };
 }
 
 // 保存卡片编辑
@@ -6959,6 +6979,64 @@ async function saveCardEdit() {
 .ai-btn-disabled {
   background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%) !important;
   cursor: not-allowed !important;
+}
+
+/* AI 多候选气泡 */
+.ai-options-popover {
+  margin-top: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+.ai-options-loading {
+  padding: 14px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 13px;
+}
+.ai-option-item {
+  padding: 10px 14px;
+  font-size: 14px;
+  color: #1f2937;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+  transition: background 0.15s;
+  line-height: 1.5;
+}
+.ai-option-item:hover {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+.ai-option-desc {
+  white-space: pre-wrap;
+}
+.ai-options-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #fafafa;
+  justify-content: flex-end;
+}
+.ai-option-regen,
+.ai-option-cancel {
+  padding: 4px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #6b7280;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ai-option-regen:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+.ai-option-cancel:hover {
+  border-color: #ef4444;
+  color: #ef4444;
 }
 
 .ai-btn-inline {

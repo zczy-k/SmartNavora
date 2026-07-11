@@ -1847,6 +1847,108 @@ router.post('/generate', authMiddleware, async (req, res) => {
   }
 });
 
+// ==================== 多候选生成（人工点选，不写库） ====================
+
+// 构造"生成3个候选"的提示词
+function buildOptionsPrompt(card, type, keyInfo, analysis) {
+  const isName = type === 'name';
+  const ctx = [`网站地址：${card.url}`];
+  if (card.title) ctx.push(`当前抓取名：${card.title}`);
+  if (keyInfo && keyInfo.brandName) ctx.push(`品牌名：${keyInfo.brandName}`);
+  if (keyInfo && keyInfo.pageTitle && keyInfo.pageTitle !== card.title) ctx.push(`页面标题：${keyInfo.pageTitle}`);
+  if (analysis && analysis.brand) ctx.push(`域名品牌：${analysis.brand}`);
+  if (keyInfo && keyInfo.bestDescription) ctx.push(`页面描述：${keyInfo.bestDescription}`);
+  const contextStr = ctx.join('\n');
+
+  if (isName) {
+    return [
+      { role: 'system', content: '你是网站命名专家。根据网站信息生成 3 个简洁准确的候选名称。\n- 严格输出 3 行，每行一个名称，不要编号、不要解释、不要标点、不要思考过程\n- 中文 2-15 字；剔除"官网/首页/登录/下载"等冗余词\n- 不要输出裸域名，要输出品牌名或"品牌+主题"' },
+      { role: 'user', content: `${contextStr}\n\n请输出 3 个候选名称：` }
+    ];
+  }
+  return [
+    { role: 'system', content: '你是网站描述专家。根据网站信息生成 3 个简洁的候选描述。\n- 严格输出 3 行，每行一条描述，不要编号、不要解释、不要思考过程\n- 每条 15-50 字，客观描述网站功能/特点' },
+    { role: 'user', content: `${contextStr}\n\n请输出 3 个候选描述：` }
+  ];
+}
+
+// 为单个字段生成至多3个候选（经清洗/校验/去重，不足用元数据兜底补齐）
+async function generateOptionsForField(config, card, type, metadata) {
+  const keyInfo = extractKeyInfo(metadata);
+  const analysis = analyzePageType(card.url, card.title);
+  const isName = type === 'name';
+  const domainLower = extractDomain(card.url).toLowerCase();
+  const brandLower = (analysis && analysis.brand) ? analysis.brand.toLowerCase() : '';
+
+  let raw = '';
+  try { raw = await callAI(config, buildOptionsPrompt(card, type, keyInfo, analysis)); } catch (e) { raw = ''; }
+  raw = stripThoughtTags(raw);
+
+  const seen = new Set();
+  const result = [];
+  const push = (val) => {
+    if (!val) return false;
+    const k = val.toLowerCase();
+    if (seen.has(k)) return false;
+    seen.add(k);
+    result.push(val);
+    return true;
+  };
+
+  // 1) AI 候选：按行拆，清洗+校验
+  const lines = raw.split(/\r?\n/).map(s => s.trim().replace(/^[\d]+[.、)\s]+/, '')).filter(Boolean);
+  for (const line of lines) {
+    if (result.length >= 3) break;
+    const cleaned = isName ? cleanName(line) : cleanDescription(line);
+    if (!cleaned) continue;
+    if (isName && isNonBrandSegment(cleaned)) continue;
+    const lower = cleaned.toLowerCase();
+    if (isName && (lower === brandLower || lower === domainLower)) continue; // 排除裸域名
+    push(cleaned);
+  }
+
+  // 2) 不足3个：用元数据兜底补齐
+  if (result.length < 3) {
+    const fallback = isName
+      ? [keyInfo && keyInfo.brandName, keyInfo && keyInfo.siteName, keyInfo && keyInfo.pageTitle && extractBrandFromTitle(keyInfo.pageTitle), card.title && extractBrandFromTitle(card.title), analysis && analysis.brand]
+      : [keyInfo && keyInfo.bestDescription, keyInfo && keyInfo.pageTitle, card.title];
+    for (const c of fallback) {
+      if (result.length >= 3) break;
+      if (!c) continue;
+      const cc = isName ? cleanName(c) : cleanDescription(c);
+      if (!cc) continue;
+      if (isName && isNonBrandSegment(cc)) continue;
+      const lower = cc.toLowerCase();
+      if (isName && (lower === brandLower || lower === domainLower)) continue;
+      push(cc);
+    }
+  }
+
+  return result.slice(0, 3);
+}
+
+// 生成多个备选（不写库），供前端人工点选
+router.post('/generate-options', authMiddleware, async (req, res) => {
+  try {
+    const { type, card } = req.body;
+    if (!type || !card?.url) return res.status(400).json({ success: false, message: '参数不完整' });
+    if (!['name', 'description'].includes(type)) return res.status(400).json({ success: false, message: 'type 必须为 name 或 description' });
+
+    const config = await getDecryptedAIConfig();
+    const validation = validateAIConfig(config);
+    if (!validation.valid) return res.status(400).json({ success: false, message: validation.message });
+
+    let metadata = null;
+    try { metadata = await fetchMetadata(card.url); } catch (e) { /* 静默降级 */ }
+
+    const candidates = await generateOptionsForField(config, card, type, metadata);
+    res.json({ success: true, candidates });
+  } catch (error) {
+    console.error('AI Generate Options Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ==================== 批量任务 API ====================
 
 router.get('/batch-task/status', authMiddleware, (req, res) => {
