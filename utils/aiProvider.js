@@ -237,50 +237,80 @@ async function callOpenAICompatible(config, messages) {
     throw new Error(`无效的 Base URL: ${e.message}`);
   }
   
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  // 构造请求体：先按标准 OpenAI 格式发送；若提供商/模型不接受可选参数(temperature/max_tokens)，
+  // 再降级为仅 model+messages 重试一次，最大化兼容各类 OpenAI 兼容服务（含自定义模型名如 auto）。
+  const buildBody = (includeOptional) => {
+    const body = { model: actualModel, messages };
+    if (includeOptional) {
+      body.temperature = 0.7;
+      body.max_tokens = 500;
+    }
+    return JSON.stringify(body);
+  };
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: actualModel,
-        messages: messages,
-        temperature: 0.7,
-        max_tokens: 500
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errText = await response.text();
-      let detail = errText;
-      try {
-        const errJson = JSON.parse(errText);
-        detail = errJson.error?.message || errJson.message || errText;
-      } catch {
-        // keep raw errText
+  const doRequest = async (includeOptional) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: buildBody(includeOptional),
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('请求超时 (30s)，请检查网络或提供商状态');
       }
-      const error = new Error(friendlyAPIError(response.status, detail));
-      error.status = response.status;
       throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
+  };
 
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('请求超时 (30s)，请检查网络或提供商状态');
+  const throwApiError = (status, rawText) => {
+    let detail = rawText;
+    try {
+      const errJson = JSON.parse(rawText);
+      detail = errJson.error?.message || errJson.message || rawText;
+    } catch {
+      // keep raw text
     }
+    const error = new Error(friendlyAPIError(status, detail));
+    error.status = status;
     throw error;
+  };
+
+  let response = await doRequest(true);
+
+  // 兼容性降级：400 且错误与可选参数相关时，去掉 temperature/max_tokens 重试一次
+  if (!response.ok && response.status === 400) {
+    const errText = await response.text().catch(() => '');
+    const lower = (errText || '').toLowerCase();
+    const paramRelated = lower.includes('max_tokens') || lower.includes('temperature')
+      || lower.includes('unknown parameter') || lower.includes('unrecognized');
+    if (paramRelated) {
+      response = await doRequest(false);
+    } else {
+      throwApiError(400, errText);
+    }
   }
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => '');
+    throwApiError(response.status, errText);
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error('AI 返回格式异常（非 JSON），请检查 Base URL 路径或提供商兼容性');
+  }
+  return data.choices?.[0]?.message?.content || '';
 }
 
 /**
@@ -488,51 +518,53 @@ async function probeBaseUrl(config) {
   const testVariant = async (url) => {
     const startTime = Date.now();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const cleanUrl = url.replace(/\/+$/, '');
+    const actualModel = config.model || providerConfig.defaultModel || 'gpt-3.5-turbo';
 
     try {
-      // 1. 轻量级验证：/models
-      const modelsUrl = `${url.replace(/\/+$/, '')}/models`;
-      const response = await fetch(modelsUrl, {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${apiKey}` },
-        signal: controller.signal
-      });
-
-      if ([200, 401, 403].includes(response.status)) {
-        return { 
-          success: true, 
-          baseUrl: url, 
-          responseTime: `${Date.now() - startTime}ms`,
-          status: response.status 
-        };
+      // 1. 轻量探 /models：判断可达性与密钥有效性
+      let modelsStatus = null;
+      try {
+        const modelsResp = await fetch(`${cleanUrl}/models`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+          signal: controller.signal
+        });
+        modelsStatus = modelsResp.status;
+        // 401/403：URL 可达但密钥/权限问题 -> 返回 success+status，交由路由层报"密钥无效"
+        if (modelsStatus === 401 || modelsStatus === 403) {
+          return { success: true, baseUrl: url, responseTime: `${Date.now() - startTime}ms`, status: modelsStatus };
+        }
+      } catch {
+        // /models 网络层失败时，继续尝试 chat，用 chat 的错误暴露真正原因
       }
 
-      // 2. 兜底验证：/chat/completions
-      const chatUrl = `${url.replace(/\/+$/, '')}/chat/completions`;
-      const chatResponse = await fetch(chatUrl, {
+      // 2. 用真实模型做一次最小对话请求（与生成同路径），验证模型名确实可用。
+      //    不带 temperature/max_tokens，避免某些提供商/模型拒绝可选参数导致误判。
+      const chatResponse = await fetch(`${cleanUrl}/chat/completions`, {
         method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: config.model || providerConfig.defaultModel || 'gpt-3.5-turbo',
-          messages: [{ role: 'user', content: 'hi' }],
-          max_tokens: 1
+          model: actualModel,
+          messages: [{ role: 'user', content: 'hi' }]
         }),
         signal: controller.signal
       });
 
-      if ([200, 401, 403].includes(chatResponse.status)) {
-        return { 
-          success: true, 
-          baseUrl: url, 
-          responseTime: `${Date.now() - startTime}ms`,
-          status: chatResponse.status
-        };
+      if (chatResponse.status === 200) {
+        return { success: true, baseUrl: url, responseTime: `${Date.now() - startTime}ms`, status: 200 };
       }
-      throw new Error(`Status ${chatResponse.status}`);
+
+      // 401/403：密钥/权限问题 -> 交由路由层处理
+      if (chatResponse.status === 401 || chatResponse.status === 403) {
+        return { success: true, baseUrl: url, responseTime: `${Date.now() - startTime}ms`, status: chatResponse.status };
+      }
+
+      // 其他状态：读取错误详情，返回友好提示（不再误报成功）
+      let detail = '';
+      try { detail = await chatResponse.text(); } catch {}
+      throw new Error(friendlyAPIError(chatResponse.status, detail));
     } finally {
       clearTimeout(timeoutId);
     }
