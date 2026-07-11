@@ -3,6 +3,17 @@
  * 支持多种 AI 服务的统一接口
  */
 
+// 代理支持：Node 18+ 的全局 fetch（undici 实现）默认不读取 HTTPS_PROXY 环境变量。
+// 若部署环境需通过代理出网访问外部 AI 服务，这里显式配置全局 dispatcher，
+// 否则 fetch 会直连并在受限网络下超时（表现为 /api/ai/test 返回 500: "This operation was aborted"）。
+// 仅当 HTTPS_PROXY/HTTP_PROXY 环境变量存在时生效，否则不改变任何行为。
+let _undici = null;
+try { _undici = require('undici'); } catch (e) { _undici = null; }
+const _proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
+if (_undici && _undici.ProxyAgent && _proxyUrl) {
+  try { _undici.setGlobalDispatcher(new _undici.ProxyAgent(_proxyUrl)); } catch (e) {}
+}
+
 // 支持的 AI 提供商列表
 const AI_PROVIDERS = {
   // 国内服务
