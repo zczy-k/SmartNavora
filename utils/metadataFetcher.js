@@ -142,6 +142,27 @@ function parseMetadata(html, sourceUrl) {
  * @param {string} title HTML title 标签内容
  * @returns {{ pagePart: string, brandPart: string }}
  */
+// 明显不应作为"品牌名/卡片标题"的片段：页面分区名、功能词、UI 词。
+// 拆分标题与校验 AI 输出时共用，避免把"客户端下载""登录""首页"等误当品牌。
+const NON_BRAND_PATTERNS = [
+  /^(客户端)?下载$/,
+  /^(登录|登陆|注册|登入|登录注册)$/,
+  /^(首页|主页|home)$/i,
+  /^(sign\s*(in|up|out)|log\s*in|logout|login|register)$/i,
+  /^(搜索|search)$/i,
+  /^(导航|菜单|menu|nav|navigation)$/i,
+  /^(官方入口|入口|最新入口|镜像|最新镜像)$/,
+  /^(关于|about|联系|contact|帮助|help|更多|more|最新|热门|hot)$/,
+  /^(文档|docs|博客|blog|论坛|forum|社区|community)$/i
+];
+
+function isNonBrandSegment(text) {
+  if (!text) return true;
+  const t = text.trim();
+  if (!t) return true;
+  return NON_BRAND_PATTERNS.some(re => re.test(t));
+}
+
 function splitHtmlTitle(title) {
   if (!title) return { pagePart: '', brandPart: '' };
 
@@ -174,12 +195,17 @@ function splitHtmlTitle(title) {
   // 判断哪部分是品牌名：通常品牌名更短，且出现在末尾
   // 例："Introduction | Vue.js" → pagePart="Introduction", brandPart="Vue.js"
   // 例："GitHub: Let's build" → pagePart="Let's build", brandPart="GitHub"
-  // 策略：如果左侧出现在右侧中（或反之），短的是品牌
+  // 但"短的是品牌"会误判 "... | 客户端下载"→把"客户端下载"当品牌，故先排除非品牌词
   if (right.length <= left.length) {
-    // 右侧更短 → 右侧是品牌（如 "... | Vue.js"）
+    if (isNonBrandSegment(right)) {
+      // 右侧是非品牌词(如"客户端下载")，不能当品牌；留空交上层用 og:site_name/域名兜底
+      return { pagePart: left, brandPart: '' };
+    }
     return { pagePart: left, brandPart: right };
   } else {
-    // 左侧更短 → 左侧是品牌（如 "GitHub: ..."）
+    if (isNonBrandSegment(left)) {
+      return { pagePart: right, brandPart: '' };
+    }
     return { pagePart: right, brandPart: left };
   }
 }
@@ -287,4 +313,4 @@ function extractKeyInfo(metadata) {
   };
 }
 
-module.exports = { fetchMetadata, extractKeyInfo };
+module.exports = { fetchMetadata, extractKeyInfo, isNonBrandSegment };

@@ -9,8 +9,28 @@ const authMiddleware = require('./authMiddleware');
 const db = require('../db');
 const { AI_PROVIDERS, callAI, probeBaseUrl } = require('../utils/aiProvider');
 const { encrypt, decrypt } = require('../utils/crypto');
-const { fetchMetadata, extractKeyInfo } = require('../utils/metadataFetcher');
+const { fetchMetadata, extractKeyInfo, isNonBrandSegment } = require('../utils/metadataFetcher');
 const EventEmitter = require('events');
+
+// 校验 AI 生成的卡片名称；若为空或命中"非品牌词"黑名单(如"客户端下载""登录""首页")，
+// 则依次用 元数据品牌名(og:site_name) > 站点名 > 域名品牌 兜底，确保标题可靠。
+// 这样无论模型强弱/是否带思考过程，都不会把页面分区名误当成标题。
+function validateAndFallbackName(rawName, card, metadata) {
+  let name = rawName ? cleanName(rawName) : '';
+  if (name && !isNonBrandSegment(name)) return name;
+  const keyInfo = extractKeyInfo(metadata);
+  const analysis = analyzePageType(card.url, card.title);
+  const candidates = [
+    keyInfo && keyInfo.brandName,
+    keyInfo && keyInfo.siteName,
+    analysis && analysis.brand
+  ].filter(Boolean);
+  for (const c of candidates) {
+    const cc = cleanName(c);
+    if (cc && !isNonBrandSegment(cc)) return cc;
+  }
+  return name;
+}
 
 // ==================== 统一字段生成服务 ====================
 
@@ -56,6 +76,8 @@ async function generateCardFields(config, card, types, strategy = {}) {
       const prompt = buildPromptWithStrategy(buildUnifiedPrompt(card, neededTypes, metadata), strategy);
       const aiResponse = await callAI(config, prompt);
       const parsed = parseUnifiedResponse(aiResponse, neededTypes);
+      // 校验名称：若 AI 返回非品牌词(如"客户端下载")，用元数据/域名兜底
+      if (parsed.name) parsed.name = validateAndFallbackName(parsed.name, card, metadata);
 
       if (parsed.name && parsed.name !== card.title) {
         await db.updateCardName(card.id, parsed.name);
@@ -82,7 +104,7 @@ async function generateCardFields(config, card, types, strategy = {}) {
       if (type === 'name') {
         prompt = buildPromptWithStrategy(buildNamePrompt(card, metadata), strategy);
         aiResponse = await callAI(config, prompt);
-        cleaned = cleanName(aiResponse);
+        cleaned = validateAndFallbackName(aiResponse, card, metadata);
         if (!cleaned) {
           throw new Error('AI 返回内容无效（可能是思考过程文本）');
         }
