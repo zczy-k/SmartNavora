@@ -1264,6 +1264,9 @@ function parseUnifiedResponse(text, types) {
   const result = { name: '', description: '' };
   if (!text) return result;
 
+  // 先剥离推理模型的思考过程，避免污染 JSON 提取
+  text = stripThoughtTags(text);
+
   try {
     // 增强的 JSON 提取逻辑
     const cleanText = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
@@ -1322,11 +1325,41 @@ function isAIThinkingText(text) {
 
 function stripThoughtTags(text) {
   if (!text) return '';
-  return text
-    .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+  let t = text;
+
+  // 推理模型(DeepSeek-R1/QwQ 等)常把思考放在 <think>...</think> 等标签内，
+  // 最终答案位于"闭合标签之后"。最稳健做法：若存在任一思考闭合标签，
+  // 只保留最后一次出现的闭合标签之后的文本（即最终答案）。
+  // 兼容：成对标签、缺省开标签、多段思考等各种情况。
+  const closingTags = ['</think>', '</thinking>', '</thought>', '</reasoning>', '</reflection>', '【/思考】'];
+  let lastIdx = -1, lastLen = 0;
+  for (const tag of closingTags) {
+    const idx = t.lastIndexOf(tag);
+    if (idx !== -1 && idx + tag.length > lastIdx) {
+      lastIdx = idx;
+      lastLen = tag.length;
+    }
+  }
+  if (lastIdx !== -1) {
+    t = t.slice(lastIdx + lastLen);
+  }
+
+  // 兜底：移除残留的成对思考标签
+  t = t
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
     .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+    .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+    .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+    .replace(/<reflection>[\s\S]*?<\/reflection>/gi, '')
     .replace(/【思考】[\s\S]*?【\/思考】/g, '')
+    // 未闭合的开标签：从该标签到末尾都视为思考，移除
+    .replace(/<think>[\s\S]*$/gi, '')
+    .replace(/<thinking>[\s\S]*$/gi, '')
+    .replace(/<thought>[\s\S]*$/gi, '')
+    .replace(/<reasoning>[\s\S]*$/gi, '')
     .trim();
+
+  return t;
 }
 
 function cleanName(text) {
