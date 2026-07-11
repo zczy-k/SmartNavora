@@ -143,6 +143,13 @@ const AI_PROVIDERS = {
 /**
  * 调用 AI 服务
  */
+// 自动判断是否为"带思考过程"的推理模型(DeepSeek-R1/QwQ/o1/o3/thinking/reasoning 等)
+function isReasoningModel(model) {
+  const m = (model || '').toLowerCase();
+  if (!m) return false;
+  return /deepseek-r1|deepseek-reasoner|reasoner|qwq|thinking|reasoning|\bo1\b|\bo3\b/.test(m);
+}
+
 async function callAI(config, messages) {
   const { provider } = config;
   const providerConfig = AI_PROVIDERS[provider];
@@ -239,9 +246,12 @@ async function callOpenAICompatible(config, messages) {
   
   // 构造请求体：先按标准 OpenAI 格式发送；若提供商/模型不接受可选参数(temperature/max_tokens)，
   // 再降级为仅 model+messages 重试一次，最大化兼容各类 OpenAI 兼容服务（含自定义模型名如 auto）。
+  // 推理模型不发送 temperature/max_tokens：思考过程也算 token，
+  // max_tokens=500 易被思考用光导致最终答案为空(进而兜底成裸域名)。
+  const reasoning = isReasoningModel(actualModel);
   const buildBody = (includeOptional) => {
     const body = { model: actualModel, messages, stream: false };
-    if (includeOptional) {
+    if (includeOptional && !reasoning) {
       body.temperature = 0.7;
       body.max_tokens = 500;
     }

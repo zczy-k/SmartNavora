@@ -12,9 +12,23 @@ const { encrypt, decrypt } = require('../utils/crypto');
 const { fetchMetadata, extractKeyInfo, isNonBrandSegment } = require('../utils/metadataFetcher');
 const EventEmitter = require('events');
 
+// 从页面标题提取品牌段：按 | – — · - : ： 取最早出现的分隔符之前的部分。
+// 例："Z-Lib图书馆：官方入口及最新镜像网址 | 客户端下载" → "Z-Lib图书馆"
+function extractBrandFromTitle(title) {
+  if (!title) return '';
+  const seps = [' | ', ' \u2013 ', ' \u2014 ', ' \u00b7 ', ' - ', '\uff1a', ': '];
+  let earliest = -1;
+  for (const sep of seps) {
+    const idx = title.indexOf(sep);
+    if (idx > 0 && (earliest === -1 || idx < earliest)) earliest = idx;
+  }
+  const seg = earliest > 0 ? title.substring(0, earliest) : title;
+  return seg.trim();
+}
+
 // 校验 AI 生成的卡片名称；若为空或命中"非品牌词"黑名单(如"客户端下载""登录""首页")，
-// 则依次用 元数据品牌名(og:site_name) > 站点名 > 域名品牌 兜底，确保标题可靠。
-// 这样无论模型强弱/是否带思考过程，都不会把页面分区名误当成标题。
+// 则依次用 元数据品牌名(og:site_name) > 站点名 > 页面标题品牌段 > 域名品牌 兜底。
+// 这样无论模型强弱/是否带思考过程，都不会把页面分区名或裸域名误当成标题。
 function validateAndFallbackName(rawName, card, metadata) {
   let name = rawName ? cleanName(rawName) : '';
   if (name && !isNonBrandSegment(name)) return name;
@@ -23,6 +37,7 @@ function validateAndFallbackName(rawName, card, metadata) {
   const candidates = [
     keyInfo && keyInfo.brandName,
     keyInfo && keyInfo.siteName,
+    keyInfo && keyInfo.pageTitle && extractBrandFromTitle(keyInfo.pageTitle),
     analysis && analysis.brand
   ].filter(Boolean);
   for (const c of candidates) {
