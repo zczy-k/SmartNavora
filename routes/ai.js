@@ -26,18 +26,23 @@ function extractBrandFromTitle(title) {
   return seg.trim();
 }
 
-// 校验 AI 生成的卡片名称；若为空或命中"非品牌词"黑名单(如"客户端下载""登录""首页")，
-// 则依次用 元数据品牌名(og:site_name) > 站点名 > 页面标题品牌段 > 域名品牌 兜底。
-// 这样无论模型强弱/是否带思考过程，都不会把页面分区名或裸域名误当成标题。
+// 校验 AI 生成的卡片名称；若为空/命中"非品牌词"黑名单/本身是裸域名(如"shikao")，
+// 则依次用 元数据品牌名(og:site_name) > 站点名 > 页面标题品牌段 > 卡片抓取标题品牌段 > 域名 兜底。
+// 这样无论模型强弱/是否带思考过程/元数据能否抓到，都不会把页面分区名或裸域名当标题。
 function validateAndFallbackName(rawName, card, metadata) {
   let name = rawName ? cleanName(rawName) : '';
-  if (name && !isNonBrandSegment(name)) return name;
   const keyInfo = extractKeyInfo(metadata);
   const analysis = analyzePageType(card.url, card.title);
+  // 裸域名/SLD 不是好标题：AI 输出若等于域名品牌或完整域名，视为低质量，尝试替换
+  const lowerName = (name || '').toLowerCase();
+  const bareDomain = analysis && analysis.brand && lowerName === analysis.brand.toLowerCase();
+  const fullDomain = lowerName && lowerName === extractDomain(card.url).toLowerCase();
+  if (name && !isNonBrandSegment(name) && !bareDomain && !fullDomain) return name;
   const candidates = [
     keyInfo && keyInfo.brandName,
     keyInfo && keyInfo.siteName,
     keyInfo && keyInfo.pageTitle && extractBrandFromTitle(keyInfo.pageTitle),
+    card.title && extractBrandFromTitle(card.title),
     analysis && analysis.brand
   ].filter(Boolean);
   for (const c of candidates) {
