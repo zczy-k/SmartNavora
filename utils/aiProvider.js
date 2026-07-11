@@ -240,7 +240,7 @@ async function callOpenAICompatible(config, messages) {
   // 构造请求体：先按标准 OpenAI 格式发送；若提供商/模型不接受可选参数(temperature/max_tokens)，
   // 再降级为仅 model+messages 重试一次，最大化兼容各类 OpenAI 兼容服务（含自定义模型名如 auto）。
   const buildBody = (includeOptional) => {
-    const body = { model: actualModel, messages };
+    const body = { model: actualModel, messages, stream: false };
     if (includeOptional) {
       body.temperature = 0.7;
       body.max_tokens = 500;
@@ -304,11 +304,14 @@ async function callOpenAICompatible(config, messages) {
     throwApiError(response.status, errText);
   }
 
+  const rawText = await response.text();
   let data;
   try {
-    data = await response.json();
+    data = JSON.parse(rawText);
   } catch {
-    throw new Error('AI 返回格式异常（非 JSON），请检查 Base URL 路径或提供商兼容性');
+    const ct = response.headers.get('content-type') || '未知';
+    const snippet = (rawText || '').slice(0, 200).replace(/\s+/g, ' ');
+    throw new Error(`AI 返回格式异常（非 JSON）。Content-Type: ${ct}；响应片段: ${snippet}。常见原因：提供商默认流式输出（已加 stream:false 仍无效时需联系提供商）、Base URL 指向了网页而非 API、或被 Cloudflare 拦截`);
   }
   return data.choices?.[0]?.message?.content || '';
 }
@@ -547,12 +550,22 @@ async function probeBaseUrl(config) {
         headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: actualModel,
-          messages: [{ role: 'user', content: 'hi' }]
+          messages: [{ role: 'user', content: 'hi' }],
+          stream: false
         }),
         signal: controller.signal
       });
 
       if (chatResponse.status === 200) {
+        // 校验响应体确为 JSON，防止 200 但返回 HTML/SSE 流等假成功
+        const raw = await chatResponse.text().catch(() => '');
+        try {
+          JSON.parse(raw);
+        } catch {
+          const ct = chatResponse.headers.get('content-type') || '未知';
+          const snippet = (raw || '').slice(0, 150).replace(/\s+/g, ' ');
+          throw new Error(`AI 返回非 JSON（Content-Type: ${ct}；片段: ${snippet}），请检查 Base URL 是否指向 API 接口`);
+        }
         return { success: true, baseUrl: url, responseTime: `${Date.now() - startTime}ms`, status: 200 };
       }
 
