@@ -259,8 +259,8 @@
       </div>
     </div>
 
-    <!-- 常用视图 -->
-    <div class="cards-single-container" v-if="isFrequentView">
+    <!-- 常用视图（搜索激活时切换到全局搜索结果，见下方 single 视图） -->
+    <div class="cards-single-container" v-if="isFrequentView && !isSearchActive">
       <div class="card-group-header single-header">
         <div class="group-header-left">
           <span class="group-name">常用站点</span>
@@ -359,11 +359,11 @@
         </div>
       </template>
     </div>
-    <!-- 选择子菜单或搜索时，直接显示卡片 -->
-    <div v-else-if="!isFrequentView" class="cards-single-container">
-      <div v-if="activeMenu && sortedFilteredCards.length > 0" class="card-group-header single-header">
+    <!-- 选择子菜单或搜索时，直接显示卡片（含常用视图下的全局搜索） -->
+    <div v-else-if="!isFrequentView || isSearchActive" class="cards-single-container">
+      <div v-if="(activeMenu || isSearchActive) && sortedFilteredCards.length > 0" class="card-group-header single-header">
         <div class="group-header-left">
-          <span class="group-name">{{ activeSubMenu?.name || activeMenu?.name || '搜索结果' }}</span>
+          <span class="group-name">{{ isSearchActive ? '搜索结果' : (activeSubMenu?.name || activeMenu?.name || '搜索结果') }}</span>
           <span class="group-count">{{ sortedFilteredCards.length }}</span>
         </div>
       </div>
@@ -1142,6 +1142,10 @@ const sortedFilteredCards = computed(() => {
   const sourceCards = debouncedSearchQuery.value ? allCards.value : cards.value;
   return applySorting(filterCardsByActiveCriteria(sourceCards));
 });
+
+// 搜索激活状态：搜索框有内容时为 true。
+// 用于让「常用」视图在搜索时也切换到全局搜索结果（与其它标签栏行为一致）。
+const isSearchActive = computed(() => !!debouncedSearchQuery.value.trim());
 
 // 应用排序逻辑
 function applySorting(cardList) {
