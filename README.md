@@ -1,7 +1,7 @@
-# SmartNavora - AI 智能导航网站 v1.38.0
+# SmartNavora - AI 智能导航网站 v1.38.1
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.38.0-brightgreen.svg)](https://github.com/zczy-k/SmartNavora/releases)
+[![Version](https://img.shields.io/badge/Version-1.38.1-brightgreen.svg)](https://github.com/zczy-k/SmartNavora/releases)
 [![Node](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 [![Security](https://img.shields.io/badge/Security-Enhanced-success.svg)](docs/SECURITY.md)
 
