@@ -10,11 +10,12 @@
     "@tootallnate/once": "^3.0.1",
     "follow-redirects": "^1.15.12",
     "minimatch": "^9.0.7",
-    "brace-expansion": "^2.0.3",
+    "brace-expansion": "^2.1.2",
     "qs": "6.15.2",
     "tar": "^7.5.16",
     "fast-xml-parser": "^5.3.8",
-    "ip-address": "^10.1.1"
+    "ip-address": "^10.1.1",
+    "body-parser": "^2.3.0"
   },
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run web:dev\"",
@@ -29,9 +30,9 @@
     "release:patch": "npm version patch --no-git-tag-version && npm run sync:version && npm install --package-lock-only && npm install --prefix web --package-lock-only"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.0",
     "archiver": "^7.0.1",
-    "axios": "^1.16.0",
+    "axios": "^1.18.0",
     "bcryptjs": "^3.0.2",
     "cheerio": "^1.2.0",
     "compression": "^1.8.1",
