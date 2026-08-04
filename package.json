@@ -10,11 +10,12 @@
     "@tootallnate/once": "^3.0.1",
     "follow-redirects": "^1.15.12",
     "minimatch": "^9.0.7",
-    "brace-expansion": "^2.1.2",
+    "brace-expansion": "^2.1.4",
     "qs": "6.15.2",
-    "tar": "^7.5.16",
+    "tar": "^7.5.21",
     "fast-xml-parser": "^5.3.8",
-    "ip-address": "^10.1.1",
+    "ip-address": "^10.4.0",
+    "postcss": "^8.5.23",
     "body-parser": "^2.3.0"
   },
   "scripts": {
@@ -45,9 +46,9 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
     "node-schedule": "^2.1.1",
-    "sanitize-html": "^2.17.0",
+    "sanitize-html": "^2.17.6",
     "sqlite3": "^5.1.7",
-    "undici": "^7.28.0",
+    "undici": "^7.29.0",
     "unzipper": "^0.12.3",
     "webdav": "^5.9.0"
   },
