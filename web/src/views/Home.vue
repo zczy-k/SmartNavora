@@ -431,7 +431,7 @@
                 :class="{ active: currentBgId === bg.id }"
                 @click="selectBackground(bg)"
               >
-                <img :src="bg.thumb" :alt="bg.name" loading="lazy" />
+                <img :src="bg.thumb" :alt="bg.name" loading="lazy" @error="e => e.target.src = '/background.webp'" />
                 <span class="bg-item-name">{{ bg.name }}</span>
               </div>
             </div>
@@ -1446,9 +1446,9 @@ const cardEditForm = ref({
 const showBgPanel = ref(false);
 const currentBgId = ref(1);
 
-// 15张预置风景背景图（使用 Unsplash 高质量图片）
+// 内置背景图优先（本地资源，无网络依赖）；其余为可选外链丰富项，加载失败会自动回退本地背景
 const presetBackgrounds = [
-  { id: 1, name: '山峦云海', thumb: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop' },
+  { id: 1, name: '内置默认', thumb: '/background.webp', url: '/background.webp' },
   { id: 2, name: '星空银河', thumb: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&h=1080&fit=crop' },
   { id: 3, name: '海边日落', thumb: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&h=1080&fit=crop' },
   { id: 4, name: '森林小径', thumb: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=300&h=200&fit=crop', url: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&h=1080&fit=crop' },
@@ -1468,9 +1468,22 @@ const presetBackgrounds = [
 // 选择背景
 function selectBackground(bg) {
   currentBgId.value = bg.id;
-  applyBackground(bg.url);
+  applyBackgroundWithFallback(bg.url);
   saveBgSetting(bg.id);
   showBgPanel.value = false;
+}
+
+// 应用背景到页面（外链加载失败时自动回退本地内置背景）
+function applyBackgroundWithFallback(url) {
+  const fallback = '/background.webp';
+  if (!url || url === fallback) {
+    applyBackground(fallback);
+    return;
+  }
+  const img = new Image();
+  img.onload = () => applyBackground(url);
+  img.onerror = () => applyBackground(fallback);
+  img.src = url;
 }
 
 // 应用背景到页面
@@ -1502,7 +1515,7 @@ function loadBgSetting() {
       const bg = presetBackgrounds.find(b => b.id === bgId);
       if (bg) {
         currentBgId.value = bgId;
-        applyBackground(bg.url);
+        applyBackgroundWithFallback(bg.url);
       }
     }
   } catch (e) {
@@ -5192,8 +5205,8 @@ async function saveCardEdit() {
 
 .home-container {
   min-height: 100vh;
-  /* 默认背景图 - 山峦云海 */
-  background-image: url('https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920&h=1080&fit=crop');
+  /* 默认背景图 - 本地内置（避免依赖外网） */
+  background-image: url('/background.webp');
   background-color: #1a1a1a; /* 添加深色背景色，防止加载瞬间闪烁 */
   background-size: cover;
   background-position: center;
