@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="card-manage">
     <div v-if="showToast" class="page-toast" :class="toastType">{{ toastMessage }}</div>
     <div class="card-header">
@@ -383,16 +383,21 @@ async function addCard() {
 }
 
 async function updateCard(card) {
-  await apiUpdateCard(card.id, {
-    menu_id: selectedMenuId.value,
-    sub_menu_id: selectedSubMenuId.value || null,
-    title: card.title,
-    url: card.url,
-    logo_url: card.logo_url,
-    desc: card.desc,
-    order: card.order,
-    section: card.section || ''
-  });
+  try {
+    await apiUpdateCard(card.id, {
+      menu_id: selectedMenuId.value,
+      sub_menu_id: selectedSubMenuId.value || null,
+      title: card.title,
+      url: card.url,
+      logo_url: card.logo_url,
+      desc: card.desc,
+      order: card.order,
+      section: card.section || ''
+    });
+    showToastMessage('已保存', 'success', 1200);
+  } catch (e) {
+    showToastMessage('保存失败: ' + (e.response?.data?.error || e.message), 'error');
+  }
   await loadCards();
 }
 
@@ -407,8 +412,9 @@ async function deleteCard(id) {
   
   try {
     await apiDeleteCard(id);
+    showToastMessage('卡片已删除', 'success', 1200);
   } catch (error) {
-    console.error('删除卡片失败:', error);
+    showToastMessage('删除失败: ' + (error.response?.data?.error || error.message), 'error');
     // 失败时重新加载
     await loadCards();
   }

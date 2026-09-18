@@ -345,13 +345,21 @@ function handleClickOutside(event) {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside);
   document.addEventListener('scroll', closeContextMenu);
+  window.addEventListener('keydown', handleEscKey);
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
   document.removeEventListener('scroll', closeContextMenu);
+  window.removeEventListener('keydown', handleEscKey);
   if (hideTimer) clearTimeout(hideTimer);
 });
+
+function handleEscKey(e) {
+  if (e.key === 'Escape' && contextMenuVisible.value) {
+    closeContextMenu();
+  }
+}
 </script>
 
 <style scoped>

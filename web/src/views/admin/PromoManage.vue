@@ -1,5 +1,9 @@
 <template>
   <div class="promo-manage">
+    <!-- 操作反馈 Toast -->
+    <transition name="toast-fade">
+      <div v-if="toastMsg" class="page-toast" :class="toastType">{{ toastMsg }}</div>
+    </transition>
     <!-- 加载遮罩 -->
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
@@ -89,6 +93,15 @@ const loading = ref(false);
 const loadingText = ref('加载中...');
 const form = ref({ img: '', url: '', position: 'left' });
 
+// 页内反馈（替代原生 alert）
+const toastMsg = ref('');
+const toastType = ref('success');
+function showToast(message, type = 'success') {
+  toastMsg.value = message;
+  toastType.value = type;
+  setTimeout(() => { toastMsg.value = ''; }, 2500);
+}
+
 const leftPromos = computed(() => allPromos.value.filter(item => item.position === 'left'));
 const rightPromos = computed(() => allPromos.value.filter(item => item.position === 'right'));
 
@@ -116,7 +129,7 @@ async function loadPromos() {
     allPromos.value = items;
   } catch (err) {
     console.error('加载宣传失败:', err);
-    alert('加载宣传失败: ' + (err.response?.data?.error || err.message));
+    showToast('加载宣传失败: ' + (err.response?.data?.error || err.message), 'error');
   } finally {
     loading.value = false;
   }
@@ -124,7 +137,7 @@ async function loadPromos() {
 
 async function handleAdd() {
   if (!form.value.img || !form.value.url) {
-    alert('请填写宣传图片链接和跳转链接');
+    showToast('请填写宣传图片链接和跳转链接', 'error');
     return;
   }
   loading.value = true;
@@ -134,7 +147,7 @@ async function handleAdd() {
     form.value = { img: '', url: '', position: 'left' };
     await loadPromos();
   } catch (err) {
-    alert('添加失败: ' + (err.response?.data?.error || err.message));
+    showToast('添加失败: ' + (err.response?.data?.error || err.message), 'error');
     loading.value = false;
   }
 }
@@ -143,7 +156,7 @@ async function handleUpdate(item) {
   try {
     await updatePromo(item.id, { img: item.img, url: item.url });
   } catch (err) {
-    alert('更新失败: ' + (err.response?.data?.error || err.message));
+    showToast('更新失败: ' + (err.response?.data?.error || err.message), 'error');
     await loadPromos();
   }
 }
@@ -156,7 +169,7 @@ async function handleDelete(item) {
     await deletePromo(item.id);
     await loadPromos();
   } catch (err) {
-    alert('删除失败: ' + (err.response?.data?.error || err.message));
+    showToast('删除失败: ' + (err.response?.data?.error || err.message), 'error');
     loading.value = false;
   }
 }
@@ -175,20 +188,21 @@ function handleImgError(e) {
 }
 
 .loading-overlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.75);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 100;
   gap: 16px;
   font-size: 16px;
   color: #1890ff;
+  border-radius: 12px;
 }
 
 .loading-spinner {
@@ -404,4 +418,24 @@ function handleImgError(e) {
     text-align: center;
   }
 }
+/* 页内反馈 Toast */
+.page-toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  max-width: 80vw;
+  text-align: center;
+}
+.page-toast.success { background: #52c41a; }
+.page-toast.error { background: #ff4d4f; }
+.page-toast.info { background: #1890ff; }
+.toast-fade-enter-active, .toast-fade-leave-active { transition: opacity 0.3s, transform 0.3s; }
+.toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateX(-50%) translateY(-8px); }
 </style>

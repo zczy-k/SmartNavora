@@ -4,7 +4,7 @@
     <div class="page-header">
       <div class="header-left">
         <h2>🤖 AI 配置</h2>
-        <p class="page-desc">配置 AI 服务、模型参数与自动生成策略，用于卡片名称、描述和标签生成。</p>
+        <p class="page-desc">配置 AI 服务、模型参数与自动生成策略，用于卡片名称和描述生成。</p>
         <div class="active-badge" v-if="activeProviderKey">
           <span class="label">当前使用:</span>
           <span class="value">{{ providers[activeProviderKey]?.name }}</span>
@@ -21,7 +21,7 @@
       <div class="quick-start-icon">🚀</div>
       <div class="quick-start-content">
         <h4>快速开始</h4>
-        <p>配置 AI 服务后，可自动为卡片生成名称、描述和标签</p>
+        <p>配置 AI 服务后，可自动为卡片生成名称和描述</p>
         <div class="quick-start-steps">
           <span class="step">1. 选择提供商</span>
           <span class="step">2. 填写 API Key</span>
@@ -144,7 +144,7 @@
         <div class="form-item switch-item">
           <span>
             <strong>自动生成</strong>
-            <small>添加卡片时自动生成名称、描述和标签</small>
+            <small>添加卡片时自动生成名称和描述</small>
           </span>
           <label class="switch">
             <input type="checkbox" v-model="config.autoGenerate" />
@@ -202,7 +202,6 @@
           <div class="stat"><span>{{ stats.total }}</span>总数</div>
           <div class="stat" :class="{ warn: stats.emptyName }"><span>{{ stats.emptyName }}</span>缺名称</div>
           <div class="stat" :class="{ warn: stats.emptyDesc }"><span>{{ stats.emptyDesc }}</span>缺描述</div>
-          <div class="stat" :class="{ warn: stats.emptyTags }"><span>{{ stats.emptyTags }}</span>缺标签</div>
         </div>
 
         <!-- 任务进度 -->
@@ -278,7 +277,7 @@
             </button>
           </div>
           <p class="action-hint" v-if="totalMissing > 0">
-            补全将自动分析 URL 并生成缺失的名称、描述和标签。
+            补全将自动分析 URL 并生成缺失的名称和描述。
           </p>
         </div>
       </div>
@@ -301,7 +300,7 @@
         <div class="modal-body">
           <p class="warning-text">清除后，所有 AI 功能将不可用，包括：</p>
           <ul class="warning-list">
-            <li>自动生成卡片名称、描述和标签</li>
+            <li>自动生成卡片名称和描述</li>
             <li>批量智能补全功能</li>
             <li>手动 AI 生成功能</li>
           </ul>
@@ -589,13 +588,13 @@ export default {
       return { none: '未配置', ok: '已连接', err: '连接失败', pending: '待测试' }[this.connectionStatus];
     },
     totalMissing() {
-      return this.stats ? this.stats.emptyName + this.stats.emptyDesc + this.stats.emptyTags : 0;
+      return this.stats ? this.stats.emptyName + this.stats.emptyDesc : 0;
     },
     taskPercent() {
       return this.task.total ? Math.round((this.task.current / this.task.total) * 100) : 0;
     },
     taskTitle() {
-      const labels = { name: '名称', description: '描述', tags: '标签' };
+      const labels = { name: '名称', description: '描述' };
       const types = this.task.types || [this.task.type];
       if (Array.isArray(types) && types.length > 0) {
         return `正在生成${types.map(t => labels[t] || t).join('、')}`;
@@ -1002,7 +1001,7 @@ export default {
         },
       async startTask(type, mode) {
         if (this.starting || this.task.running) return;
-        if (mode === 'all' && !confirm(`确定要重新生成所有卡片的${type === 'name' ? '名称' : type === 'description' ? '描述' : '标签'}吗？`)) return;
+        if (mode === 'all' && !confirm(`确定要重新生成所有卡片的${type === 'name' ? '名称' : '描述'}吗？`)) return;
         
         this.starting = true;
         try {
@@ -1018,7 +1017,7 @@ export default {
             currentCard: '准备中...',
             startTime: Date.now(),
             errors: [],
-            types: type === 'all' ? ['name', 'description', 'tags'] : [type]
+            types: type === 'all' ? ['name', 'description'] : [type]
           };
   
           const { data } = await aiStartBatchTask({ type, mode });
@@ -1058,14 +1057,14 @@ export default {
         },
         async retryCard(errItem) {
           if (!errItem.cardId) return;
-          await this.doStartBatchTask([errItem.cardId], this.task.types || ['name', 'description', 'tags']);
+          await this.doStartBatchTask([errItem.cardId], this.task.types || ['name', 'description']);
         },
         async retryAllFailed() {
           const failedIds = this.task.errors
             .map(e => e.cardId)
             .filter(id => !!id);
           if (failedIds.length === 0) return;
-          await this.doStartBatchTask(failedIds, this.task.types || ['name', 'description', 'tags']);
+          await this.doStartBatchTask(failedIds, this.task.types || ['name', 'description']);
         },
         async doStartBatchTask(cardIds, types) {
           if (this.starting || this.task.running) return;

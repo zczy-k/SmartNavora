@@ -1,5 +1,9 @@
-﻿<template>
+<template>
   <div class="menu-manage">
+    <!-- 操作反馈 Toast -->
+    <transition name="toast-fade">
+      <div v-if="toastMsg" class="page-toast" :class="toastType">{{ toastMsg }}</div>
+    </transition>
     <!-- 全局加载遮罩 -->
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
@@ -173,6 +177,15 @@ const newMenuName = ref('');
 const selectedMenuId = ref(null);
 const selectedSubMenuId = ref(null);
 
+// 页内反馈（替代原生 alert）
+const toastMsg = ref('');
+const toastType = ref('success');
+function showToast(message, type = 'success') {
+  toastMsg.value = message;
+  toastType.value = type;
+  setTimeout(() => { toastMsg.value = ''; }, 2500);
+}
+
 // 编辑主菜单
 const showEditModal = ref(false);
 const editingMenu = ref(null);
@@ -244,7 +257,7 @@ async function loadMenus(isUpdate = false) {
       notifyExtensionMenusUpdated();
     }
   } catch (e) {
-    alert('加载失败: ' + (e.response?.data?.error || e.message));
+    showToast('加载失败: ' + (e.response?.data?.error || e.message), 'error');
   } finally {
     loading.value = false;
   }
@@ -283,8 +296,9 @@ async function addMenu() {
     selectedSubMenuId.value = null;
     newMenuName.value = '';
     await loadMenus(true); // 通知扩展刷新
+    showToast('主菜单已添加', 'success');
   } catch (e) {
-    alert('添加失败: ' + (e.response?.data?.error || e.message));
+    showToast('添加失败: ' + (e.response?.data?.error || e.message), 'error');
     loading.value = false;
   }
 }
@@ -308,8 +322,9 @@ async function saveEdit() {
   try {
     await apiUpdateMenu(menuId, { name, order });
     await loadMenus(true); // 通知扩展刷新
+    showToast('主菜单已保存', 'success');
   } catch (e) {
-    alert('保存失败: ' + (e.response?.data?.error || e.message));
+    showToast('保存失败: ' + (e.response?.data?.error || e.message), 'error');
     loading.value = false;
   }
 }
@@ -322,8 +337,9 @@ async function confirmDeleteMenu(menu) {
   try {
     await apiDeleteMenu(menu.id);
     await loadMenus(true); // 通知扩展刷新
+    showToast('主菜单已删除', 'success');
   } catch (e) {
-    alert('删除失败: ' + (e.response?.data?.error || e.message));
+    showToast('删除失败: ' + (e.response?.data?.error || e.message), 'error');
     loading.value = false;
   }
 }
@@ -357,8 +373,9 @@ async function saveSubMenu() {
     selectedMenuId.value = menuId;
     selectedSubMenuId.value = res.data?.id || selectedSubMenuId.value;
     await loadMenus(true); // 通知扩展刷新
+    showToast('子菜单已添加', 'success');
   } catch (e) {
-    alert('添加失败: ' + (e.response?.data?.error || e.message));
+    showToast('添加失败: ' + (e.response?.data?.error || e.message), 'error');
     loading.value = false;
   }
 }
@@ -382,8 +399,9 @@ async function saveSubMenuEdit() {
   try {
     await apiUpdateSubMenu(subMenuId, { name, order });
     await loadMenus(true); // 通知扩展刷新
+    showToast('子菜单已保存', 'success');
   } catch (e) {
-    alert('保存失败: ' + (e.response?.data?.error || e.message));
+    showToast('保存失败: ' + (e.response?.data?.error || e.message), 'error');
     loading.value = false;
   }
 }
@@ -396,8 +414,9 @@ async function confirmDeleteSubMenu(sub) {
   try {
     await apiDeleteSubMenu(sub.id);
     await loadMenus(true); // 通知扩展刷新
+    showToast('子菜单已删除', 'success');
   } catch (e) {
-    alert('删除失败: ' + (e.response?.data?.error || e.message));
+    showToast('删除失败: ' + (e.response?.data?.error || e.message), 'error');
     loading.value = false;
   }
 }
@@ -420,22 +439,23 @@ function closeModal() {
   position: relative;
 }
 
-/* 加载遮罩 */
+/* 加载遮罩（局部覆盖，不阻断整页） */
 .loading-overlay {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.75);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 100;
   gap: 16px;
   font-size: 16px;
   color: #1890ff;
+  border-radius: 12px;
 }
 
 .loading-spinner {
@@ -805,6 +825,27 @@ function closeModal() {
   padding: 16px 20px;
   border-top: 1px solid #eee;
 }
+
+/* 页内反馈 Toast */
+.page-toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  max-width: 80vw;
+  text-align: center;
+}
+.page-toast.success { background: #52c41a; }
+.page-toast.error { background: #ff4d4f; }
+.page-toast.info { background: #1890ff; }
+.toast-fade-enter-active, .toast-fade-leave-active { transition: opacity 0.3s, transform 0.3s; }
+.toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateX(-50%) translateY(-8px); }
 
 /* 响应式 */
 @media (max-width: 600px) {

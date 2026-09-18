@@ -404,11 +404,6 @@ async function seedDefaultData() {
   }
 }
 
-// 预置标签分类（已禁用 - 标签功能已移除）
-async function seedTags() {
-  return;
-}
-
 // 执行初始化并导出 Promise
 const dbInitPromise = initializeDatabase();
 

@@ -16,6 +16,7 @@ yarn-error.log*
 # Database
 database/*.db
 database/*.db-*
+database/*.bak*
 
 # Backups
 backups/
@@ -50,6 +51,9 @@ config/autoBackup.json
 *.swp
 *.swo
 *~
+
+# Local tooling
+.workbuddy/
 
 # Package lock conflicts
 package-lock.json.orig

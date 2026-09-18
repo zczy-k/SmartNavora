@@ -1,5 +1,9 @@
 <template>
   <div class="friend-manage">
+    <!-- 操作反馈 Toast -->
+    <transition name="toast-fade">
+      <div v-if="toastMsg" class="page-toast" :class="toastType">{{ toastMsg }}</div>
+    </transition>
     <div class="friend-header">
       <div class="header-content">
         <h2 class="page-title">友情链接管理</h2>
@@ -16,6 +20,9 @@
       <table class="friend-table">
         <thead><tr><th>网站名</th><th>链接</th><th>Logo</th><th>操作</th></tr></thead>
         <tbody>
+          <tr v-if="friends.length === 0">
+            <td colspan="4" class="empty-hint">暂无友链，请先添加</td>
+          </tr>
           <tr v-for="f in friends" :key="f.id">
             <td><input v-model="f.title" @blur="updateFriend(f)" class="input" /></td>
             <td><input v-model="f.url" @blur="updateFriend(f)" class="input" /></td>
@@ -38,6 +45,15 @@ const newTitle = ref('');
 const newUrl = ref('');
 const newLogo = ref('');
 
+// 页内反馈（替代原生 alert）
+const toastMsg = ref('');
+const toastType = ref('success');
+function showToast(message, type = 'success') {
+  toastMsg.value = message;
+  toastType.value = type;
+  setTimeout(() => { toastMsg.value = ''; }, 2500);
+}
+
 useDataSync('FriendLinkManage', ({ isSelfChange }) => {
   if (!isSelfChange) {
     loadFriends();
@@ -47,20 +63,37 @@ useDataSync('FriendLinkManage', ({ isSelfChange }) => {
 onMounted(loadFriends);
 
 async function loadFriends() {
-  const res = await getFriends();
-  friends.value = res.data;
+  try {
+    const res = await getFriends();
+    friends.value = res.data;
+  } catch (e) {
+    showToast('加载友链失败: ' + (e.response?.data?.error || e.message), 'error');
+  }
 }
 async function addFriend() {
-  if (!newTitle.value || !newUrl.value) return;
-  await apiAddFriend({ title: newTitle.value, url: newUrl.value, logo: newLogo.value });
-  newTitle.value = '';
-  newUrl.value = '';
-  newLogo.value = '';
-  loadFriends();
+  if (!newTitle.value || !newUrl.value) {
+    showToast('请填写网站名和链接', 'error');
+    return;
+  }
+  try {
+    await apiAddFriend({ title: newTitle.value, url: newUrl.value, logo: newLogo.value });
+    newTitle.value = '';
+    newUrl.value = '';
+    newLogo.value = '';
+    loadFriends();
+    showToast('友链添加成功', 'success');
+  } catch (e) {
+    showToast('添加失败: ' + (e.response?.data?.error || e.message), 'error');
+  }
 }
 async function updateFriend(f) {
-  await apiUpdateFriend(f.id, { title: f.title, url: f.url, logo: f.logo });
-  loadFriends();
+  try {
+    await apiUpdateFriend(f.id, { title: f.title, url: f.url, logo: f.logo });
+    showToast('已保存', 'success');
+  } catch (e) {
+    showToast('保存失败: ' + (e.response?.data?.error || e.message), 'error');
+    await loadFriends();
+  }
 }
 async function deleteFriend(id) {
   if (!confirm('确定要删除这个友链吗？')) return;
@@ -73,8 +106,9 @@ async function deleteFriend(id) {
   
   try {
     await apiDeleteFriend(id);
+    showToast('友链已删除', 'success');
   } catch (error) {
-    console.error('删除友链失败:', error);
+    showToast('删除失败: ' + (error.response?.data?.error || error.message), 'error');
     // 失败时重新加载
     await loadFriends();
   }
@@ -249,4 +283,31 @@ async function deleteFriend(id) {
     font-size: 14px;
   }
 }
+
+.empty-hint {
+  text-align: center;
+  color: #999;
+  padding: 24px 0;
+}
+
+/* 页内反馈 Toast */
+.page-toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  max-width: 80vw;
+  text-align: center;
+}
+.page-toast.success { background: #52c41a; }
+.page-toast.error { background: #ff4d4f; }
+.page-toast.info { background: #1890ff; }
+.toast-fade-enter-active, .toast-fade-leave-active { transition: opacity 0.3s, transform 0.3s; }
+.toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateX(-50%) translateY(-8px); }
 </style> 

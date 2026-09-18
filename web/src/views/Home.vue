@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="home-container" @click="handleContainerClick">
     <!-- 移动端汉堡按钮 -->
     <button class="mobile-hamburger" @click.stop="mobileDrawerVisible = true">
@@ -273,6 +273,7 @@
           :selectedCards="selectedCards"
           :selectionMode="selectedCards.length > 0"
           :showSource="true"
+          :manual-sort-enabled="canManualSort"
           @contextEdit="handleContextEdit"
           @contextDelete="handleContextDelete"
           @toggleCardSelection="handleToggleCardSelection"
@@ -280,6 +281,7 @@
           @requireAuth="handleRequireAuth"
           @cardClicked="handleCardClicked"
           @quickAdd="openQuickAddModal"
+          @moveCard="handleMoveCard"
           @click.stop
         />
       </div>
@@ -342,6 +344,7 @@
                         :selectionMode="selectedCards.length > 0"
                         :categoryId="activeMenu?.id"
                         :subCategoryId="group.subMenuId"
+                        :manual-sort-enabled="canManualSort"
                         @contextEdit="handleContextEdit"
                         @contextDelete="handleContextDelete"
                         @toggleCardSelection="handleToggleCardSelection"
@@ -349,6 +352,7 @@
                         @requireAuth="handleRequireAuth"
                         @cardClicked="handleCardClicked"
                         @quickAdd="openQuickAddModal"
+                        @moveCard="handleMoveCard"
                         @click.stop
                       />
                     </div>
@@ -394,6 +398,7 @@
               :selectionMode="selectedCards.length > 0"
               :categoryId="activeMenu?.id"
               :subCategoryId="activeSubMenu?.id"
+              :manual-sort-enabled="canManualSort"
               @contextEdit="handleContextEdit"
               @contextDelete="handleContextDelete"
               @toggleCardSelection="handleToggleCardSelection"
@@ -401,6 +406,7 @@
               @requireAuth="handleRequireAuth"
               @cardClicked="handleCardClicked"
               @quickAdd="openQuickAddModal"
+              @moveCard="handleMoveCard"
               @click.stop
             />
           </div>
@@ -1076,7 +1082,7 @@
 
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch } from 'vue';
-import { getMenus, getCards, getAllCards, getFrequentCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, getCardSections, removeFromFrequent, instance as apiInstance } from '../api';
+import { getMenus, getCards, getAllCards, getFrequentCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, reorderSearchEngines, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, getCardSections, removeFromFrequent, instance as apiInstance } from '../api';
 
 // AI API 调用（使用 api.js 的 instance 以确保全局 401 拦截器生效）
 const api = {
@@ -1091,7 +1097,12 @@ import { getDuplicateMatch, extractPathname, formatUrlPreview, isMultiPathDomain
 const CardGrid = defineAsyncComponent(() => import('../components/CardGrid.vue'));
 
 const mobileDrawerVisible = ref(false);
-// 存储"展开"状态而非"折叠"，首次使用默认全部折叠（展开集为空）
+// 存储"展开"状态而非"折叠"
+// 默认全部展开：只有当用户设置过折叠/展开偏好（或服务端已有数据）时，才按展开集合判断
+const hasExpandedPreference = ref(
+  localStorage.getItem('expandedGroups') !== null ||
+  localStorage.getItem('collapsedGroups') !== null
+);
 const expandedGroups = ref(new Set(JSON.parse(localStorage.getItem('expandedGroups') || '[]')));
 
 // 迁移旧版 collapsedGroups → expandedGroups
@@ -1194,7 +1205,7 @@ function applySorting(cardList) {
       break;
     case 'default':
     default:
-      sorted.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      sorted.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
       break;
   }
   
@@ -1234,10 +1245,6 @@ const leftPromos = ref([]);
 const rightPromos = ref([]);
 const showFriendLinks = ref(false);
 const friendLinks = ref([]);
-const allTags = ref([]);
-const activeTags = computed(() => allTags.value.filter(t => t.cardCount && t.cardCount > 0));
-const selectedTagIds = ref([]); // 支持多标签筛选
-const showTagPanel = ref(false); // 标签选择浮层
 
 // 批量添加相关状态
 const showBatchAddModal = ref(false);
@@ -1435,12 +1442,6 @@ const cardEditForm = ref({
   section: ''
 });
 
-// 标签搜索和快速创建
-const tagSearchQuery = ref('');
-const showQuickAddTag = ref(false);
-const quickTagName = ref('');
-const quickTagColor = ref('#1890ff');
-
 // 背景面板
 const showBgPanel = ref(false);
 const currentBgId = ref(1);
@@ -1607,13 +1608,17 @@ function selectEngineFromDropdown(engine) {
   showEngineDropdown.value = false;
 }
 
-// 保存搜索引擎顺序到localStorage
+// 保存搜索引擎顺序到localStorage，并同步自定义引擎顺序到后端（跨设备）
 function saveEngineOrder() {
   try {
     const order = searchEngines.value.map(e => e.name);
     localStorage.setItem('search_engine_order', JSON.stringify(order));
   } catch (e) {
     console.error('保存搜索引擎顺序失败:', e);
+  }
+  const customs = searchEngines.value.filter(e => e.custom && e.id);
+  if (customs.length > 0) {
+    reorderSearchEngines(customs.map(e => ({ id: e.id }))).catch(() => {});
   }
 }
 
@@ -1637,25 +1642,6 @@ function moveEngineDown(index) {
 
 function clearSearch() {
   searchQuery.value = '';
-}
-
-// 标签筛选控制（支持多标签）
-function toggleTagFilter(tagId) {
-  const index = selectedTagIds.value.indexOf(tagId);
-  if (index > -1) {
-    selectedTagIds.value.splice(index, 1);
-  } else {
-    selectedTagIds.value.push(tagId);
-  }
-}
-
-function clearTagFilter() {
-  selectedTagIds.value = [];
-}
-
-// 检查标签是否被选中
-function isTagSelected(tagId) {
-  return selectedTagIds.value.includes(tagId);
 }
 
 // 打开添加搜索引擎弹窗(需要先验证密码)
@@ -1789,7 +1775,11 @@ const filteredCards = computed(() => {
 const globalSortType = ref('time_desc');
 const showGlobalSortMenu = ref(false);
 
+// 手动排序（上移/下移）仅在默认排序下有意义；非默认排序时禁用
+const canManualSort = computed(() => globalSortType.value === 'default');
+
 const sortOptions = [
+  { type: 'default', label: '默认', icon: '📌' },
   { type: 'time', label: '时间', icon: '🕐' },
   { type: 'freq', label: '频率', icon: '🔥' },
   { type: 'name', label: '名称', icon: '🔤' }
@@ -1815,19 +1805,31 @@ function toggleGlobalSortMenu() {
 }
 
   async function selectGlobalSort(type) {
+    // 显式切回默认排序（手动排序的唯一入口）
+    if (type === 'default') {
+      globalSortType.value = 'default';
+      try {
+        await fetch('/api/cards/user-settings/sort', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sortType: 'default' })
+        });
+      } catch (e) {
+        console.error('保存排序设置失败:', e);
+      }
+      return;
+    }
+
     const currentType = globalSortType.value.replace(/_asc|_desc/, '');
     const currentDir = globalSortType.value.endsWith('_desc') ? 'desc' : 'asc';
     
     let newValue;
     if (currentType === type) {
-      // 循环切换：降序 -> 升序 -> 默认 -> 降序
       if (currentDir === 'desc') {
         newValue = `${type}_asc`;
       } else {
-        // 如果已经是升序，则回到默认排序（或者根据用户喜好，只在增减之间切换）
-        // 这里我们遵循用户“3项”且“自动切换增减”的描述，但在逻辑上保留一个回到默认的可能（可选）
-        // 如果用户只想在增减之间切换：
-        newValue = `${type}_desc`;
+        // 升序再点一次回到默认排序，避免无法退出规则排序
+        newValue = 'default';
       }
     } else {
       newValue = `${type}_desc`;
@@ -1999,6 +2001,9 @@ onMounted(async () => {
         cardsCache.value = cachedCardsMap;
         if (menus.value.length > 0) {
           const firstMenu = menus.value[0];
+          // 缓存卡片按第一个菜单加载，选中菜单同步为第一个，保证首屏一致
+          activeMenu.value = firstMenu;
+          activeSubMenu.value = null;
           const allCachedCards = [];
           const firstMenuKey = `${firstMenu.id}_null`;
           if (cachedCardsMap[firstMenuKey]) allCachedCards.push(...cachedCardsMap[firstMenuKey]);
@@ -2053,7 +2058,12 @@ onMounted(async () => {
     menus.value = menusRes.value.data;
     cacheData.menus = menusRes.value.data;
     if (menus.value.length) {
-      if (!cacheUsed) isFrequentView.value = true;
+      // 无缓存时默认进入第一个菜单，避免新用户首屏停在"常用"空状态
+      if (!cacheUsed && !activeMenu.value) {
+        activeMenu.value = menus.value[0];
+        activeSubMenu.value = null;
+        await loadCards(false).catch(() => {});
+      }
       cacheData.cards = cards.value;
     }
   }
@@ -2135,8 +2145,19 @@ onMounted(async () => {
   document.addEventListener('keydown', handleGlobalKeydown);
 });
 
-// 全局键盘事件处理（ESC关闭弹窗）
+// 全局键盘事件处理（ESC关闭弹窗 + / 聚焦搜索）
 function handleGlobalKeydown(e) {
+  // / 快捷键聚焦搜索框（输入中不拦截）
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const tag = e.target?.tagName;
+    if (tag && ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+    const searchInput = document.querySelector('.search-input');
+    if (searchInput) {
+      e.preventDefault();
+      searchInput.focus();
+      return;
+    }
+  }
   if (e.key === 'Escape') {
     if (showPasswordModal.value) {
       closePasswordModal();
@@ -2642,6 +2663,7 @@ function handleDrawerSubMenuSelect(subMenu, parentMenu) {
 }
 
 function toggleGroupCollapse(groupKey) {
+  ensureCollapseBaseline();
   const newSet = new Set(expandedGroups.value);
   if (expandedGroups.value.has(groupKey)) {
     newSet.delete(groupKey);
@@ -2652,7 +2674,21 @@ function toggleGroupCollapse(groupKey) {
   localStorage.setItem('expandedGroups', JSON.stringify([...newSet]));
 }
 
+// 用户首次执行折叠操作时，把当前视图中所有可见分组标记为"展开"，作为基线。
+// 这样第一次折叠某个组不会连带把其他组全部折叠。
+function ensureCollapseBaseline() {
+  if (hasExpandedPreference.value) return;
+  const base = new Set(expandedGroups.value);
+  groupedCards.value.forEach(g => base.add(g.key));
+  groupBySection(sortedFilteredCards.value).forEach(sec => {
+    if (sec.section) base.add(getSectionKey(sec.section, activeSubMenu.value?.id || null));
+  });
+  expandedGroups.value = base;
+  hasExpandedPreference.value = true;
+}
+
 function isGroupCollapsed(groupKey) {
+  if (!hasExpandedPreference.value) return false;
   return !expandedGroups.value.has(groupKey);
 }
 
@@ -2661,6 +2697,7 @@ function getSectionKey(sectionName, subMenuId) {
 }
 
 function toggleSectionCollapse(sectionName, subMenuId) {
+  ensureCollapseBaseline();
   const key = getSectionKey(sectionName, subMenuId);
   const newSet = new Set(expandedGroups.value);
   if (expandedGroups.value.has(key)) {
@@ -2673,6 +2710,7 @@ function toggleSectionCollapse(sectionName, subMenuId) {
 }
 
 function isSectionCollapsed(sectionName, subMenuId) {
+  if (!hasExpandedPreference.value) return false;
   return !expandedGroups.value.has(getSectionKey(sectionName, subMenuId));
 }
 
@@ -2698,6 +2736,7 @@ async function syncExpandedGroupsFromServer() {
       const parsed = JSON.parse(data.expandedGroups);
       if (Array.isArray(parsed) && parsed.length > 0) {
         expandedGroups.value = new Set(parsed);
+        hasExpandedPreference.value = true;
         localStorage.setItem('expandedGroups', data.expandedGroups);
       }
     }
@@ -2994,43 +3033,22 @@ function getCategoryCards(menuId, subMenuId) {
 }
 
 async function handleSearch() {
-  if (!searchQuery.value.trim()) return;
-  if (selectedEngine.value.name === 'site') {
-    const keyword = searchQuery.value.toLowerCase().trim();
+  const keyword = searchQuery.value.trim();
+  if (!keyword) return;
 
-    if (allCards.value.length === 0) {
-      await loadAllCardsForSearch();
-    }
-
-    const match = allCards.value.find(card =>
-      (card.title || '').toLowerCase().includes(keyword) ||
-      (card.url || '').toLowerCase().includes(keyword)
-    );
-
-    if (match) {
-      const targetMenu = menus.value.find(menu => menu.id === match.menu_id) || null;
-      const targetSubMenu = targetMenu?.subMenus?.find(subMenu => subMenu.id === match.sub_menu_id) || null;
-
-      if (targetMenu) {
-        activeMenu.value = targetMenu;
-        activeSubMenu.value = targetSubMenu;
-        await loadCards(false);
-      }
-
-      setTimeout(() => {
-        const el = document.querySelector(`[data-card-id='${match.id}']`);
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 100);
-      return;
-    }
-
-    if (!match) {
-      alert('未找到相关内容');
-    }
-  } else {
-    const url = selectedEngine.value.url(searchQuery.value);
-    window.open(url, '_blank');
+  // 站内优先：全站有匹配卡片时停留在过滤结果，不跳外站
+  if (allCards.value.length === 0) {
+    try { await loadAllCardsForSearch(); } catch (e) {}
   }
+  const matched = filterCardsWithPinyin(allCards.value, keyword);
+  if (matched.length > 0) {
+    showToastMessage(`站内找到 ${matched.length} 张卡片，回车已定位`, 'success');
+    return;
+  }
+
+  // 无匹配 → 外跳当前搜索引擎
+  const url = selectedEngine.value.url(keyword);
+  window.open(url, '_blank');
   searchQuery.value = '';
 }
 
@@ -3296,105 +3314,6 @@ function handleBackToPassword() {
   batchStep.value = 1;
 }
 
-// 智能标签推荐规则：基于域名和关键词
-const TAG_RECOMMENDATION_RULES = [
-  // 开发工具类
-  { domains: ['github.com', 'gitlab.com', 'gitee.com', 'bitbucket.org'], keywords: ['git', '代码', 'code'], tags: ['开发工具', '代码托管'] },
-  { domains: ['stackoverflow.com', 'stackexchange.com'], keywords: ['问答', 'q&a'], tags: ['开发工具', '问答社区'] },
-  { domains: ['npmjs.com', 'pypi.org', 'packagist.org', 'maven.org'], keywords: ['package', '包管理'], tags: ['开发工具', '包管理'] },
-  { domains: ['docker.com', 'kubernetes.io'], keywords: ['docker', 'k8s', '容器'], tags: ['开发工具', '云原生'] },
-  
-  // 搜索引擎类
-  { domains: ['google.com', 'bing.com', 'baidu.com', 'sogou.com', 'so.com', 'duckduckgo.com', 'yahoo.com'], keywords: ['搜索', 'search'], tags: ['搜索引擎'] },
-  
-  // 视频娱乐类
-  { domains: ['youtube.com', 'bilibili.com', 'youku.com', 'iqiyi.com', 'tencent.com/v'], keywords: ['视频', 'video', '影视'], tags: ['视频', '娱乐'] },
-  { domains: ['netflix.com', 'primevideo.com', 'disneyplus.com'], keywords: ['流媒体', 'streaming'], tags: ['视频', '娱乐', '流媒体'] },
-  
-  // 社交媒体类
-  { domains: ['twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'linkedin.com'], keywords: ['社交', 'social'], tags: ['社交媒体'] },
-  { domains: ['weibo.com', 'douban.com'], keywords: ['微博', '社区'], tags: ['社交媒体', '社区'] },
-  
-  // 学习教育类
-  { domains: ['coursera.org', 'udemy.com', 'edx.org', 'khanacademy.org'], keywords: ['课程', 'course', '学习'], tags: ['学习', '教育'] },
-  { domains: ['zhihu.com', 'quora.com'], keywords: ['知识', '问答'], tags: ['问答社区', '学习'] },
-  { domains: ['medium.com', 'dev.to', 'csdn.net', 'cnblogs.com', 'juejin.cn'], keywords: ['博客', 'blog', '技术'], tags: ['技术博客', '学习'] },
-  
-  // 设计创作类
-  { domains: ['figma.com', 'sketch.com', 'adobe.com'], keywords: ['设计', 'design', 'ui'], tags: ['设计工具', '创作'] },
-  { domains: ['dribbble.com', 'behance.net'], keywords: ['灵感', 'inspiration'], tags: ['设计', '灵感'] },
-  
-  // 云服务类
-  { domains: ['aws.amazon.com', 'cloud.google.com', 'azure.microsoft.com', 'aliyun.com', 'tencent.com/cloud'], keywords: ['云计算', 'cloud'], tags: ['云服务'] },
-  
-  // 邮箱类
-  { domains: ['gmail.com', 'outlook.com', 'qq.com/mail', '163.com', '126.com'], keywords: ['邮箱', 'email', 'mail'], tags: ['邮箱'] },
-  
-  // 工具类
-  { domains: ['notion.so', 'evernote.com', 'onenote.com'], keywords: ['笔记', 'note'], tags: ['效率工具', '笔记'] },
-  { domains: ['trello.com', 'asana.com', 'jira.atlassian.com'], keywords: ['项目管理', 'project'], tags: ['效率工具', '项目管理'] },
-  
-  // AI工具类
-  { domains: ['openai.com', 'chat.openai.com', 'claude.ai', 'bard.google.com'], keywords: ['ai', '人工智能', 'gpt'], tags: ['AI工具'] },
-  
-  // 编程学习类
-  { domains: ['leetcode.com', 'leetcode.cn', 'codewars.com', 'hackerrank.com'], keywords: ['算法', 'algorithm', '刷题'], tags: ['编程学习', '算法'] },
-];
-
-// 智能推荐标签
-function recommendTags(url, title) {
-  const recommendedTagNames = new Set();
-  
-  try {
-    const urlObj = new URL(url);
-    const domain = urlObj.hostname.toLowerCase().replace('www.', '');
-    const titleLower = (title || '').toLowerCase();
-    
-    // 遍历推荐规则
-    for (const rule of TAG_RECOMMENDATION_RULES) {
-      let matched = false;
-      
-      // 检查域名匹配
-      if (rule.domains) {
-        for (const ruleDomain of rule.domains) {
-          if (domain.includes(ruleDomain) || ruleDomain.includes(domain)) {
-            matched = true;
-            break;
-          }
-        }
-      }
-      
-      // 检查关键词匹配
-      if (!matched && rule.keywords && title) {
-        for (const keyword of rule.keywords) {
-          if (titleLower.includes(keyword.toLowerCase())) {
-            matched = true;
-            break;
-          }
-        }
-      }
-      
-      // 如果匹配，添加推荐标签
-      if (matched) {
-        rule.tags.forEach(tag => recommendedTagNames.add(tag));
-      }
-    }
-  } catch (e) {
-    console.warn('推荐标签失败:', e);
-  }
-  
-  // 将推荐的标签名称转换为标签ID
-  const recommendedTagIds = [];
-  for (const tagName of recommendedTagNames) {
-    const tag = allTags.value.find(t => t.name === tagName);
-    if (tag) {
-      recommendedTagIds.push(tag.id);
-    }
-  }
-  
-  return recommendedTagIds;
-}
-
 async function parseUrls() {
   const urls = batchUrls.value
     .split('\n')
@@ -3419,9 +3338,6 @@ async function parseUrls() {
     
     // 3. 检测重复并标记
     parsedCards.value = response.data.data.map(card => {
-      // 为每个卡片智能推荐标签
-      const recommendedTagIds = recommendTags(card.url, card.title);
-      
       // 检测与现有卡片重复
       let duplicateCard = null;
       let duplicateMatch = null;
@@ -3454,8 +3370,7 @@ async function parseUrls() {
           urlPreview: formatUrlPreview(duplicateCard.url)
         } : null,
         currentPath: extractPathname(card.url),
-        urlPreview: formatUrlPreview(card.url),
-        recommendedTagIds: recommendedTagIds
+        urlPreview: formatUrlPreview(card.url)
       };
     });
     
@@ -3935,6 +3850,59 @@ function handleRequireAuth(callback) {
 
 function handleToggleCardSelection(card) {
   toggleCardSelection(card);
+}
+
+// 卡片上移/下移（手动排序，基于当前视图显示顺序）
+async function handleMoveCard(card, direction) {
+  requireAuth(async () => {
+    const scope = locateCardDisplayList(card);
+    if (!scope) return;
+
+    const idx = scope.findIndex(c => c.id === card.id);
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= scope.length) return;
+
+    // 交换相邻卡片
+    const tmp = scope[idx];
+    scope[idx] = scope[swapIdx];
+    scope[swapIdx] = tmp;
+
+    // 重编号整个列表并提交（batch-update 仅更新 id/order/menu_id/sub_menu_id）
+    const updates = scope.map((c, i) => ({
+      id: c.id,
+      order: i,
+      menu_id: c.menu_id ?? c.parent_menu_id ?? null,
+      sub_menu_id: c.sub_menu_id ?? null
+    }));
+
+    try {
+      await batchUpdateCards(updates);
+      // 本地即时生效
+      scope.forEach((c, i) => { c.order = i; });
+      showToastMessage(direction === 'up' ? '已上移' : '已下移', 'success');
+      await loadCards(true);
+    } catch (err) {
+      showToastMessage('排序保存失败: ' + (err.response?.data?.error || err.message), 'error');
+      await loadCards(true); // 回滚到服务端顺序
+    }
+  });
+}
+
+// 定位卡片在当前视图中的显示顺序列表
+function locateCardDisplayList(card) {
+  if (isFrequentView.value && !isSearchActive.value) {
+    return frequentCards.value;
+  }
+  if (activeSubMenu.value || isSearchActive.value) {
+    return sortedFilteredCards.value;
+  }
+  for (const group of groupedCards.value) {
+    const display = sortAndFilterCards(group.cards, group.subMenuId);
+    if (display.some(c => c.id === card.id)) {
+      return display;
+    }
+  }
+  return null;
 }
 
 // 打开移动面板
@@ -4710,8 +4678,6 @@ function closeEditCardModal() {
     desc: '',
     section: ''
   };
-  quickTagName.value = '';
-  quickTagColor.value = '#1890ff';
 }
 
 function getFriendlyAIErrorMessage(err) {

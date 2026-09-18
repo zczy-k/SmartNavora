@@ -69,6 +69,15 @@
           <span>移动到...</span>
         </div>
         <div class="context-menu-divider"></div>
+        <div class="context-menu-item" :class="{ disabled: !manualSortEnabled }" :title="manualSortEnabled ? '' : '请先在排序菜单切回「默认」再手动排序'" @click="onContextMoveUp">
+          <span class="context-menu-icon">⬆️</span>
+          <span>上移</span>
+        </div>
+        <div class="context-menu-item" :class="{ disabled: !manualSortEnabled }" :title="manualSortEnabled ? '' : '请先在排序菜单切回「默认」再手动排序'" @click="onContextMoveDown">
+          <span class="context-menu-icon">⬇️</span>
+          <span>下移</span>
+        </div>
+        <div class="context-menu-divider"></div>
         <div class="context-menu-item" @click="onContextOpen">
           <span class="context-menu-icon">🔗</span>
           <span>在新标签页打开</span>
@@ -83,7 +92,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useIconLoader } from '../composables/useIconLoader';
 
 const props = defineProps({
@@ -92,7 +101,8 @@ const props = defineProps({
   categoryId: Number,
   subCategoryId: [Number, null],
   selectionMode: Boolean,
-  showSource: Boolean
+  showSource: Boolean,
+  manualSortEnabled: { type: Boolean, default: true }
 });
 
 const emit = defineEmits([
@@ -102,7 +112,8 @@ const emit = defineEmits([
   'openMovePanel',
   'requireAuth',
   'cardClicked',
-  'quickAdd'
+  'quickAdd',
+  'moveCard'
 ]);
 
 const cardGridRef = ref(null);
@@ -145,10 +156,21 @@ function setupIconLazyLoad(el, card) {
   }
 }
 
+onMounted(() => {
+  window.addEventListener('keydown', handleEscKey);
+});
+
 onUnmounted(() => {
+  window.removeEventListener('keydown', handleEscKey);
   iconCleanups.forEach(cleanup => cleanup());
   iconCleanups.clear();
 });
+
+function handleEscKey(e) {
+  if (e.key === 'Escape' && contextMenuVisible.value) {
+    closeContextMenu();
+  }
+}
 
 const contextMenuVisible = ref(false);
 const contextMenuX = ref(0);
@@ -215,6 +237,20 @@ function onContextMove() {
       emit('toggleCardSelection', contextMenuCard.value);
     }
     emit('openMovePanel');
+  }
+  closeContextMenu();
+}
+
+function onContextMoveUp() {
+  if (contextMenuCard.value && props.manualSortEnabled) {
+    emit('moveCard', contextMenuCard.value, 'up');
+  }
+  closeContextMenu();
+}
+
+function onContextMoveDown() {
+  if (contextMenuCard.value && props.manualSortEnabled) {
+    emit('moveCard', contextMenuCard.value, 'down');
   }
   closeContextMenu();
 }
@@ -737,6 +773,15 @@ function isCardSelected(card) {
 
 .context-menu-item:hover {
   background: rgba(24, 144, 255, 0.1);
+}
+
+.context-menu-item.disabled {
+  cursor: not-allowed;
+  color: #bbb;
+}
+
+.context-menu-item.disabled:hover {
+  background: transparent;
 }
 
 .context-menu-icon {

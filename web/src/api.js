@@ -1,4 +1,4 @@
-﻿import axios from 'axios';
+import axios from 'axios';
 const BASE = '/api';
 
 // 生成并持久化客户端唯一标识，用于SSE同步优化
@@ -171,6 +171,7 @@ export const getSearchEngines = () => instance.get(`/search-engines`);
 export const parseSearchEngine = (url) => instance.post(`/search-engines/parse`, { url });
 export const addSearchEngine = (data) => instance.post(`/search-engines`, data);
 export const deleteSearchEngine = (id) => instance.delete(`/search-engines/${id}`);
+export const reorderSearchEngines = (engines) => instance.post(`/search-engines/reorder`, { engines });
 
 // 卡片去重API
 export const detectDuplicates = () => instance.get(`/cards/detect-duplicates/all?_t=${Date.now()}`);
