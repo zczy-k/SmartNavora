@@ -10,6 +10,7 @@ const db = require('../db');
 const { AI_PROVIDERS, callAI, probeBaseUrl } = require('../utils/aiProvider');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { fetchMetadata, extractKeyInfo, isNonBrandSegment } = require('../utils/metadataFetcher');
+const knownPlatforms = require('../knowledge/knownPlatforms');
 const EventEmitter = require('events');
 
 // 从页面标题提取品牌段：按 | – — · - : ： 取最早出现的分隔符之前的部分。
@@ -47,7 +48,10 @@ function validateAndFallbackName(rawName, card, metadata) {
   ].filter(Boolean);
   for (const c of candidates) {
     const cc = cleanName(c);
-    if (cc && !isNonBrandSegment(cc)) return cc;
+    if (cc && !isNonBrandSegment(cc)) {
+      console.log(`[ai-gen] 名称兜底替换: ${name || '(空)'} -> ${cc} (${card.url})`);
+      return cc;
+    }
   }
   return name;
 }
@@ -98,6 +102,8 @@ async function generateCardFields(config, card, types, strategy = {}) {
       const parsed = parseUnifiedResponse(aiResponse, neededTypes);
       // 校验名称：若 AI 返回非品牌词(如"客户端下载")，用元数据/域名兜底
       if (parsed.name) parsed.name = validateAndFallbackName(parsed.name, card, metadata);
+      // 描述空泛把关：模型信息不足输空话时，回退元数据描述
+      if (parsed.description) parsed.description = finalizeDescription(parsed.description, metadata, card.url);
 
       if (parsed.name && parsed.name !== card.title) {
         await db.updateCardName(card.id, parsed.name);
@@ -141,6 +147,7 @@ async function generateCardFields(config, card, types, strategy = {}) {
         prompt = buildPromptWithStrategy(buildDescriptionPrompt(card, metadata), strategy);
         aiResponse = await callAI(config, prompt);
         cleaned = cleanDescription(aiResponse);
+        cleaned = finalizeDescription(cleaned, metadata, card.url);
         if (!cleaned) {
           throw new Error('AI 返回内容无效（可能是思考过程文本）');
         }
@@ -582,6 +589,47 @@ function extractDomain(url) {
   }
 }
 
+// 复合 TLD（二级公共后缀）集合：形如 "example.co.uk"，最后两段整体属于 TLD
+const COMPOUND_TLDS = new Set([
+  'co.uk', 'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn', 'ac.cn',
+  'com.au', 'net.au', 'org.au', 'co.jp', 'ne.jp', 'com.br', 'com.mx',
+  'co.in', 'co.nz', 'com.sg', 'com.hk', 'com.tw', 'co.kr'
+]);
+
+// 从 hostname 提取二级域名（SLD），正确处理复合 TLD，避免把"co.uk"当 SLD
+function getSLD(hostname) {
+  if (!hostname) return '';
+  const parts = hostname.split('.').filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length >= 3) {
+    const lastTwo = parts.slice(-2).join('.');
+    if (COMPOUND_TLDS.has(lastTwo)) return parts[parts.length - 3];
+  }
+  return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+}
+
+// 将域名 SLD 自然语言化，作为小众/未知站点的品牌兜底（比小写裸域名可读）
+// 例：ai-writer-tool -> "AI Writer Tool"，myflow -> "Myflow"
+function humanizeBrand(sld) {
+  if (!sld) return '';
+  if (/^\d+$/.test(sld)) return sld; // 纯数字域名不做处理
+  const segments = sld.split(/[-_]+/).filter(Boolean);
+  const parts = [];
+  for (const seg of segments) {
+    if (/^[A-Za-z]+$/.test(seg) && seg.length <= 3) {
+      parts.push(seg.toUpperCase()); // 常见缩写保留大写
+      continue;
+    }
+    const spaced = seg
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2');
+    for (const p of spaced.split(/\s+/).filter(Boolean)) {
+      parts.push(p.charAt(0).toUpperCase() + p.slice(1));
+    }
+  }
+  return parts.length ? parts.join(' ') : sld.charAt(0).toUpperCase() + sld.slice(1);
+}
+
 /**
  * 检查名称是否为"脏数据"（低质量数据，需要 AI 优化）
  * 核心原则：宁可多优化，也不遗漏——AI 的价值在于智能提炼，不是简单清洗
@@ -729,18 +777,21 @@ function analyzePageType(url, title = '') {
     const search = urlObj.search;
     const pathParts = pathname.split('/').filter(p => p.length > 0);
 
-    // 1. 提取品牌名（从域名）
-    const domainParts = hostname.split('.');
-    if (domainParts.length >= 2) {
-      // 处理子域名情况（如 docs.example.com, api.example.com）
-      if (['docs', 'api', 'app', 'blog', 'help', 'support', 'status', 'dev', 'auth', 'login', 'console', 'dashboard', 'admin'].includes(domainParts[0])) {
-        result.brand = domainParts[1];
-        result.category = domainParts[0];
-        result.type = 'subpage';
-        result.hints.push(`子域名表明这是 ${domainParts[0]} 类型页面`);
-      } else {
-        result.brand = domainParts[0];
-      }
+    // 1. 提取品牌名（从域名），复合 TLD 与子域名感知
+    const segments = hostname.split('.');
+    const firstSeg = segments[0] || '';
+    const SUBDOMAIN_HINTS = ['docs', 'api', 'app', 'blog', 'help', 'support', 'status', 'dev', 'auth', 'login', 'console', 'dashboard', 'admin'];
+    // 仅当段数大于"主域+TLD"且首段确为已知子域名前缀才视作子域名，
+    // 避免把 status.io、console.dev 这类真实主域名误判为子域名
+    const isKnownSubdomain = segments.length > 2 && SUBDOMAIN_HINTS.includes(firstSeg);
+    if (isKnownSubdomain) {
+      const mainHost = hostname.substring(firstSeg.length + 1);
+      result.brand = humanizeBrand(getSLD(mainHost));
+      result.category = firstSeg;
+      result.type = 'subpage';
+      result.hints.push(`子域名表明这是 ${firstSeg} 类型页面`);
+    } else {
+      result.brand = humanizeBrand(getSLD(hostname));
     }
 
     // 2. 分析路径模式
@@ -840,126 +891,7 @@ function analyzePageType(url, title = '') {
       }
     }
 
-    // 6. 特殊域名识别
-    const knownPlatforms = {
-      // 代码托管
-      'github.com': { brand: 'GitHub', defaultCategory: 'code' },
-      'gitlab.com': { brand: 'GitLab', defaultCategory: 'code' },
-      'gitee.com': { brand: 'Gitee', defaultCategory: 'code' },
-      'bitbucket.org': { brand: 'Bitbucket', defaultCategory: 'code' },
-      'codeberg.org': { brand: 'Codeberg', defaultCategory: 'code' },
-      // 云服务与部署
-      'vercel.com': { brand: 'Vercel', defaultCategory: 'deploy' },
-      'netlify.com': { brand: 'Netlify', defaultCategory: 'deploy' },
-      'heroku.com': { brand: 'Heroku', defaultCategory: 'deploy' },
-      'railway.app': { brand: 'Railway', defaultCategory: 'deploy' },
-      'render.com': { brand: 'Render', defaultCategory: 'deploy' },
-      'fly.io': { brand: 'Fly.io', defaultCategory: 'deploy' },
-      'aws.amazon.com': { brand: 'AWS', defaultCategory: 'cloud' },
-      'cloud.google.com': { brand: 'Google Cloud', defaultCategory: 'cloud' },
-      'azure.microsoft.com': { brand: 'Azure', defaultCategory: 'cloud' },
-      'cloudflare.com': { brand: 'Cloudflare', defaultCategory: 'network' },
-      // 数据库
-      'supabase.com': { brand: 'Supabase', defaultCategory: 'database' },
-      'firebase.google.com': { brand: 'Firebase', defaultCategory: 'database' },
-      'planetscale.com': { brand: 'PlanetScale', defaultCategory: 'database' },
-      'mongodb.com': { brand: 'MongoDB', defaultCategory: 'database' },
-      'neon.tech': { brand: 'Neon', defaultCategory: 'database' },
-      // 设计工具
-      'figma.com': { brand: 'Figma', defaultCategory: 'design' },
-      'canva.com': { brand: 'Canva', defaultCategory: 'design' },
-      'sketch.com': { brand: 'Sketch', defaultCategory: 'design' },
-      'dribbble.com': { brand: 'Dribbble', defaultCategory: 'design' },
-      'behance.net': { brand: 'Behance', defaultCategory: 'design' },
-      // 生产力工具
-      'notion.so': { brand: 'Notion', defaultCategory: 'productivity' },
-      'airtable.com': { brand: 'Airtable', defaultCategory: 'productivity' },
-      'coda.io': { brand: 'Coda', defaultCategory: 'productivity' },
-      'clickup.com': { brand: 'ClickUp', defaultCategory: 'productivity' },
-      'monday.com': { brand: 'Monday', defaultCategory: 'productivity' },
-      'trello.com': { brand: 'Trello', defaultCategory: 'productivity' },
-      'asana.com': { brand: 'Asana', defaultCategory: 'productivity' },
-      'linear.app': { brand: 'Linear', defaultCategory: 'productivity' },
-      // 搜索与AI
-      'google.com': { brand: 'Google', defaultCategory: 'search' },
-      'bing.com': { brand: 'Bing', defaultCategory: 'search' },
-      'baidu.com': { brand: '百度', defaultCategory: 'search' },
-      'openai.com': { brand: 'OpenAI', defaultCategory: 'ai' },
-      'anthropic.com': { brand: 'Anthropic', defaultCategory: 'ai' },
-      'gemini.google': { brand: 'Gemini', defaultCategory: 'ai' },
-      'claude.ai': { brand: 'Claude', defaultCategory: 'ai' },
-      'chat.openai.com': { brand: 'ChatGPT', defaultCategory: 'ai' },
-      'huggingface.co': { brand: 'Hugging Face', defaultCategory: 'ai' },
-      'midjourney.com': { brand: 'Midjourney', defaultCategory: 'ai' },
-      'stability.ai': { brand: 'Stability AI', defaultCategory: 'ai' },
-      // 视频平台
-      'youtube.com': { brand: 'YouTube', defaultCategory: 'video' },
-      'bilibili.com': { brand: '哔哩哔哩', defaultCategory: 'video' },
-      'vimeo.com': { brand: 'Vimeo', defaultCategory: 'video' },
-      'twitch.tv': { brand: 'Twitch', defaultCategory: 'video' },
-      'douyin.com': { brand: '抖音', defaultCategory: 'video' },
-      'ixigua.com': { brand: '西瓜视频', defaultCategory: 'video' },
-      // 社交平台
-      'twitter.com': { brand: 'Twitter', defaultCategory: 'social' },
-      'x.com': { brand: 'X', defaultCategory: 'social' },
-      'linkedin.com': { brand: 'LinkedIn', defaultCategory: 'social' },
-      'facebook.com': { brand: 'Facebook', defaultCategory: 'social' },
-      'instagram.com': { brand: 'Instagram', defaultCategory: 'social' },
-      'tiktok.com': { brand: 'TikTok', defaultCategory: 'social' },
-      'weibo.com': { brand: '微博', defaultCategory: 'social' },
-      'xiaohongshu.com': { brand: '小红书', defaultCategory: 'social' },
-      // 论坛与问答
-      'reddit.com': { brand: 'Reddit', defaultCategory: 'forum' },
-      'zhihu.com': { brand: '知乎', defaultCategory: 'qa' },
-      'quora.com': { brand: 'Quora', defaultCategory: 'qa' },
-      'stackoverflow.com': { brand: 'Stack Overflow', defaultCategory: 'tech-qa' },
-      'segmentfault.com': { brand: 'SegmentFault', defaultCategory: 'tech-qa' },
-      'v2ex.com': { brand: 'V2EX', defaultCategory: 'tech-forum' },
-      // 博客与内容
-      'medium.com': { brand: 'Medium', defaultCategory: 'blog' },
-      'dev.to': { brand: 'DEV Community', defaultCategory: 'tech-blog' },
-      'hashnode.dev': { brand: 'Hashnode', defaultCategory: 'tech-blog' },
-      'juejin.cn': { brand: '掘金', defaultCategory: 'tech-blog' },
-      'csdn.net': { brand: 'CSDN', defaultCategory: 'tech-blog' },
-      'cnblogs.com': { brand: '博客园', defaultCategory: 'tech-blog' },
-      'jianshu.com': { brand: '简书', defaultCategory: 'blog' },
-      'substack.com': { brand: 'Substack', defaultCategory: 'newsletter' },
-      // 沟通协作
-      'discord.com': { brand: 'Discord', defaultCategory: 'community' },
-      'slack.com': { brand: 'Slack', defaultCategory: 'communication' },
-      'telegram.org': { brand: 'Telegram', defaultCategory: 'communication' },
-      'zoom.us': { brand: 'Zoom', defaultCategory: 'communication' },
-      'teams.microsoft.com': { brand: 'Microsoft Teams', defaultCategory: 'communication' },
-      'feishu.cn': { brand: '飞书', defaultCategory: 'communication' },
-      'dingtalk.com': { brand: '钉钉', defaultCategory: 'communication' },
-      'weixin.qq.com': { brand: '微信', defaultCategory: 'communication' },
-      // 包管理
-      'npmjs.com': { brand: 'npm', defaultCategory: 'package' },
-      'pypi.org': { brand: 'PyPI', defaultCategory: 'package' },
-      'crates.io': { brand: 'crates.io', defaultCategory: 'package' },
-      'pkg.go.dev': { brand: 'Go Packages', defaultCategory: 'package' },
-      'rubygems.org': { brand: 'RubyGems', defaultCategory: 'package' },
-      'packagist.org': { brand: 'Packagist', defaultCategory: 'package' },
-      'mvnrepository.com': { brand: 'Maven', defaultCategory: 'package' },
-      // 电商
-      'amazon.com': { brand: 'Amazon', defaultCategory: 'ecommerce' },
-      'ebay.com': { brand: 'eBay', defaultCategory: 'ecommerce' },
-      'taobao.com': { brand: '淘宝', defaultCategory: 'ecommerce' },
-      'jd.com': { brand: '京东', defaultCategory: 'ecommerce' },
-      'pinduoduo.com': { brand: '拼多多', defaultCategory: 'ecommerce' },
-      'shopify.com': { brand: 'Shopify', defaultCategory: 'ecommerce' },
-      // 科技巨头
-      'microsoft.com': { brand: 'Microsoft', defaultCategory: 'tech' },
-      'apple.com': { brand: 'Apple', defaultCategory: 'tech' },
-      'mozilla.org': { brand: 'Mozilla', defaultCategory: 'tech' },
-      // 文档与知识库
-      'readthedocs.io': { brand: 'Read the Docs', defaultCategory: 'docs' },
-      'gitbook.io': { brand: 'GitBook', defaultCategory: 'docs' },
-      'docsify.js.org': { brand: 'Docsify', defaultCategory: 'docs' },
-      'docusaurus.io': { brand: 'Docusaurus', defaultCategory: 'docs' },
-      'vuepress.vuejs.org': { brand: 'VuePress', defaultCategory: 'docs' }
-    };
-
+    // 6. 特殊域名识别（白名单已外提到 knowledge/knownPlatforms.js）
     for (const [domain, info] of Object.entries(knownPlatforms)) {
       if (hostname.includes(domain)) {
         result.brand = info.brand;
@@ -974,6 +906,37 @@ function analyzePageType(url, title = '') {
   }
 
   return result;
+}
+
+// JSON-LD / og:type 类型 → 现有 category 词汇表映射（仅当路径/子域名未判出 category 时兜底）
+const JSONLD_CATEGORY_MAP = {
+  softwareapplication: 'tool',
+  webapplication: 'tool',
+  mobileapplication: 'tool',
+  article: 'blog',
+  blogposting: 'blog',
+  newsarticle: 'blog',
+  techarticle: 'blog',
+  videoobject: 'video',
+  video: 'video',
+  qapage: 'qa',
+  discussionforumposting: 'forum',
+  product: 'ecommerce'
+};
+
+// 页面类型兜底：若 category 尚未确定，用 meta 里的 og:type / JSON-LD @type 做分类
+function applyJsonLdCategory(analysis, keyInfo) {
+  if (!analysis || analysis.category) return analysis;
+  const t = keyInfo && keyInfo.pageType;
+  if (!t) return analysis;
+  const cat = JSONLD_CATEGORY_MAP[t.toLowerCase()];
+  if (cat) {
+    analysis.category = cat;
+    analysis.type = ['blog', 'video', 'forum', 'qa'].includes(cat) ? 'content' : 'subpage';
+    if (analysis.confidence === 'low') analysis.confidence = 'medium';
+    analysis.hints.push(`JSON-LD/og:type 标记为 ${t}`);
+  }
+  return analysis;
 }
 
 /**
@@ -1039,8 +1002,9 @@ function getPageTypeDescription(analysis) {
 function buildUnifiedPrompt(card, types, metadata = null) {
   const domain = extractDomain(card.url);
   const analysis = analyzePageType(card.url, card.title);
-  const pageTypeDesc = getPageTypeDescription(analysis);
   const keyInfo = extractKeyInfo(metadata);
+  applyJsonLdCategory(analysis, keyInfo);
+  const pageTypeDesc = getPageTypeDescription(analysis);
 
   const currentName = card.title && !card.title.includes('://') && !card.title.startsWith('www.')
     ? card.title : '';
@@ -1081,6 +1045,7 @@ function buildUnifiedPrompt(card, types, metadata = null) {
 - 优先使用【网站自述】中的真实信息来提炼，不要凭空编造
 - 长度指引：品牌首页 12-25 字；工具/文档页 18-35 字；博客/文章/社区 15-30 字
 - 禁止使用的空泛表述："全球领先的..."（除非确实 TOP3）、"一站式...平台"、"致力于..."、"专注于..."、"专业的...服务"、"这是一个"、"本网站"
+- 严禁输出仅由"品牌名 + 官网/官方网站/平台"构成、且不含任何具体功能的空泛描述（如"XX 官方网站与产品平台"）；信息不足时也必须基于域名语义或页面类型给出具体功能
 - 应使用具体描述：说明核心功能、用户价值、差异化定位
 - 当【网站自述】只是品牌口号（如"开放、分享、探索"）而非实际描述时，基于页面类型和 URL 推断用途，不要照搬口号
 - 论坛/社区类网站：说明社区定位和讨论主题，而非重复 slogan
@@ -1124,9 +1089,9 @@ function buildUnifiedPrompt(card, types, metadata = null) {
     { role: 'user', content: '【网站URL】https://aito.do/latest\n【原始标题】Aito.do - 开放、分享、探索\n【品牌名】Aito.do\n【网站自述】Aito.do - 开放、分享、探索\n【页面类型】论坛/社区\n【品牌识别】Aito.do\n【分析提示】路径包含 forum 相关关键词' },
     { role: 'assistant', content: '{"name":"Aito.do","description":"AI 技术爱好者交流社区，讨论大模型、开发工具与网络配置等话题"}' },
 
-    // 9. 信息极度匮乏场景
-    { role: 'user', content: '【网站URL】https://example-tool.com/\n【原始标题】无\n【页面类型】网站首页\n【品牌识别】Example Tool' },
-    { role: 'assistant', content: '{"name":"Example Tool","description":"Example Tool 官方网站与产品平台"}' },
+    // 9. 信息匮乏场景：只有域名语义 + 页面类型，也要做有信息量的推断，禁止空泛兜底
+    { role: 'user', content: '【网站URL】https://pdf-tools.io/\n【原始标题】无\n【网站自述】无\n【页面类型】在线工具\n【品牌识别】PDF Tools' },
+    { role: 'assistant', content: '{"name":"PDF Tools","description":"在线 PDF 处理工具集，支持合并、压缩与格式转换"}' },
 
     // 实际请求
     { role: 'user', content: contextInfo }
@@ -1138,8 +1103,9 @@ function buildUnifiedPrompt(card, types, metadata = null) {
 function buildNamePrompt(card, metadata = null) {
   const domain = extractDomain(card.url);
   const analysis = analyzePageType(card.url, card.title);
-  const pageTypeDesc = getPageTypeDescription(analysis);
   const keyInfo = extractKeyInfo(metadata);
+  applyJsonLdCategory(analysis, keyInfo);
+  const pageTypeDesc = getPageTypeDescription(analysis);
 
   const commonRules = '\n\n## 强制要求\n- 严禁输出任何思考过程、解释或反问\n- 严禁输出"请提供"、"如果您能"、"我需要"等请求信息的内容\n- 必须直接输出名称文本，不要任何前缀或后缀\n- 即使信息有限，也必须基于已有信息做出合理推断并输出结果';
 
@@ -1206,8 +1172,9 @@ function buildNamePrompt(card, metadata = null) {
 function buildDescriptionPrompt(card, metadata = null) {
   const domain = extractDomain(card.url);
   const analysis = analyzePageType(card.url, card.title);
-  const pageTypeDesc = getPageTypeDescription(analysis);
   const keyInfo = extractKeyInfo(metadata);
+  applyJsonLdCategory(analysis, keyInfo);
+  const pageTypeDesc = getPageTypeDescription(analysis);
 
   const commonRules = '\n\n## 强制要求\n- 严禁输出任何思考过程、解释或反问\n- 严禁输出"请提供"、"如果您能"、"我需要"等请求信息的内容\n- 必须直接输出描述文本，不要任何前缀或后缀\n- 即使信息有限，也必须基于已有信息做出合理推断并输出结果';
 
@@ -1269,6 +1236,7 @@ function buildDescriptionPrompt(card, metadata = null) {
 - "一站式...平台"（除非真的整合了多种核心功能）
 - "致力于..."、"专注于..."、"提供专业的..."
 - "这是一个"、"本网站"、"欢迎来到"
+- "品牌名 + 官网/官方网站/平台"且无具体功能的空泛描述（如"XX 官方网站与产品平台"）
 
 ### 应该使用的具体描述
 - ✅ "免费压缩 PNG/JPEG/WebP 图片，最高减少 80% 体积"
@@ -1292,8 +1260,8 @@ function buildDescriptionPrompt(card, metadata = null) {
     { role: 'assistant', content: 'AI 技术爱好者交流社区，讨论大模型、开发工具与网络配置等话题' },
     { role: 'user', content: '网站名称：V2EX\n网站地址：https://www.v2ex.com/\n网站自述：V2EX = way to explore\n页面类型：论坛/社区\n品牌：V2EX\n输出描述：' },
     { role: 'assistant', content: '程序员与创意工作者的技术讨论社区' },
-    { role: 'user', content: '网站名称：Example\n网站地址：https://example.com/\n页面类型：网站首页\n品牌：Example\n输出描述：' },
-    { role: 'assistant', content: 'Example 官方网站与产品平台' },
+    { role: 'user', content: '网站名称：PDF Tools\n网站地址：https://pdf-tools.io/\n页面类型：在线工具\n品牌：PDF Tools\n输出描述：' },
+    { role: 'assistant', content: '在线 PDF 处理工具集，支持合并、压缩与格式转换' },
     // 实际请求
     {
       role: 'user',
@@ -1513,6 +1481,29 @@ function cleanDescription(text) {
     .replace(/[。.]+$/, '');
   
   return cleaned.length > 200 ? cleaned.substring(0, 200) + '...' : cleaned;
+}
+
+// 描述空泛黑名单：命中则视为低质量输出（常见于模型信息不足时输出的兜底空话）
+function isVagueDescription(text) {
+  if (!text) return true;
+  const t = text.trim();
+  if (/^(官网|官方网站|网站首页|本网站|首页)$/.test(t)) return true;
+  if (/^(XX|某某|示例|Example)/.test(t)) return true;
+  if (/^(官网|官方网站|网站)(与|及)?(产品|平台|介绍)?$/.test(t)) return true;
+  return false;
+}
+
+// 描述最终把关：若 AI 输出空泛，回退用元数据最佳描述；仍无则置空（静默降级）
+function finalizeDescription(cleaned, metadata, url = '') {
+  if (!isVagueDescription(cleaned)) return cleaned;
+  const raw = metadata && (metadata.jsonLdDescription || metadata.ogDescription || metadata.twitterDescription || metadata.description);
+  const fb = raw ? cleanDescription(raw) : '';
+  if (isVagueDescription(fb)) {
+    console.warn(`[ai-gen] 描述空泛且无元数据兜底，置空: ${url}`);
+    return '';
+  }
+  console.log(`[ai-gen] 描述空泛→元数据兜底: ${url}`);
+  return fb;
 }
 
 

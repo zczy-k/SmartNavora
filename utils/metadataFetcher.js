@@ -11,6 +11,10 @@ const FETCH_TIMEOUT = 4000;       // 超时 4 秒（Discourse 等重型站点需
 const MAX_BODY_SIZE = 500 * 1024; // 最多下载 500KB（Discourse 等 SPA 框架 <head> 可达 200KB+）
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+// 简单内存缓存：URL → 成功抓取的元数据（仅缓存成功结果，失败不缓存以便重试）
+const metadataCache = new Map();
+const METADATA_CACHE_MAX = 300;
+
 /**
  * 抓取网页元数据
  * @param {string} url 目标网址
@@ -18,6 +22,7 @@ const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
  */
 async function fetchMetadata(url) {
   if (!url) return null;
+  if (metadataCache.has(url)) return metadataCache.get(url);
 
   try {
     const response = await axios.get(url, {
@@ -50,7 +55,12 @@ async function fetchMetadata(url) {
       return null;
     }
 
-    return parseMetadata(response.data, url);
+    const meta = parseMetadata(response.data, url);
+    if (meta) {
+      if (metadataCache.size >= METADATA_CACHE_MAX) metadataCache.clear();
+      metadataCache.set(url, meta);
+    }
+    return meta;
   } catch (error) {
     // 所有错误静默处理，返回 null
     return null;
@@ -79,7 +89,12 @@ function parseMetadata(html, sourceUrl) {
     siteName: '',
     keywords: '',
     lang: '',
-    canonical: ''
+    canonical: '',
+    jsonLdType: '',
+    jsonLdBrandName: '',
+    jsonLdPageTitle: '',
+    jsonLdDescription: '',
+    jsonLdSiteName: ''
   };
 
   // 1. <title>
@@ -123,6 +138,15 @@ function parseMetadata(html, sourceUrl) {
   // 9. 从页面可见内容提取品牌名（h1、logo 文字等），作为补充来源
   metadata.visibleBrand = extractVisibleBrand($);
 
+  // 9.5 解析 JSON-LD 结构化数据：大量中小站/Shopify/WordPress 携带，
+  //     提供比路径更可信的品牌名、描述与 @type 分类，是静态抓取此前缺失的关键信息源
+  const jsonLd = extractJsonLd($);
+  metadata.jsonLdType = jsonLd.type;
+  metadata.jsonLdBrandName = jsonLd.brandName;
+  metadata.jsonLdPageTitle = jsonLd.pageTitle;
+  metadata.jsonLdDescription = jsonLd.description;
+  metadata.jsonLdSiteName = jsonLd.siteName;
+
   // 10. 清理所有字段：去除多余空白和换行
   for (const key of Object.keys(metadata)) {
     metadata[key] = metadata[key]
@@ -134,6 +158,56 @@ function parseMetadata(html, sourceUrl) {
   // 11. 检查是否有有效数据（至少有一个非空字段）
   const hasData = Object.values(metadata).some(v => v.length > 0);
   return hasData ? metadata : null;
+}
+
+/**
+ * 解析页面内嵌的 JSON-LD 结构化数据
+ * 兼容单个对象、对象数组、以及含 @graph 数组的包装结构。
+ * 按 @type 区分"品牌类"与"内容类"，提取品牌名、页面标题、描述、站点名与类型。
+ * 大量 Shopify/WordPress 及中小站点携带 JSON-LD，是静态抓取的重要信息来源。
+ * @param {CheerioStatic} $ cheerio 实例
+ * @returns {{type:string,brandName:string,pageTitle:string,description:string,siteName:string}}
+ */
+function extractJsonLd($) {
+  const result = { type: '', brandName: '', pageTitle: '', description: '', siteName: '' };
+
+  // 品牌/机构类 @type：其 name 是品牌名
+  const brandTypes = new Set(['Website', 'WebSite', 'Organization', 'Corporation', 'LocalBusiness', 'SoftwareApplication', 'Brand']);
+  // 内容类 @type：其 headline/name 是页面标题
+  const contentTypes = new Set(['Article', 'BlogPosting', 'NewsArticle', 'TechArticle', 'Report', 'VideoObject']);
+
+  const scripts = $('script[type="application/ld+json"]');
+  scripts.each((i, el) => {
+    let data;
+    try {
+      data = JSON.parse($(el).text());
+    } catch (e) {
+      return; // 单段 JSON-LD 解析失败，静默跳过
+    }
+
+    // 兼容数组与 @graph 包装：优先取第一个带 @type 的实体
+    if (Array.isArray(data)) data = data[0];
+    if (data && Array.isArray(data['@graph'])) {
+      data = data['@graph'].find(d => d && d['@type']) || data['@graph'][0];
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+
+    const t = (data['@type'] || '').toString();
+    if (t && !result.type) result.type = t;
+
+    if (!result.description && data.description) result.description = String(data.description);
+    if (!result.siteName && data.publisher && data.publisher.name) result.siteName = String(data.publisher.name);
+
+    const name = data.name || data.alternateName;
+    if (brandTypes.has(t)) {
+      if (name && !result.brandName) result.brandName = String(name);
+    } else if (contentTypes.has(t)) {
+      const headline = data.headline || name;
+      if (headline && !result.pageTitle) result.pageTitle = String(headline);
+    }
+  });
+
+  return result;
 }
 
 /**
@@ -289,23 +363,24 @@ function getMetaContent($, attrName, attrValue) {
 function extractKeyInfo(metadata) {
   if (!metadata) return null;
 
-  // 品牌名优先级：og:site_name > 页面可见品牌(h1/logo) > title拆分品牌 > meta site_name
-  const brandName = metadata.ogSiteName || metadata.visibleBrand || metadata.titleBrandPart || metadata.siteName || '';
+  // 品牌名优先级：og:site_name > JSON-LD 品牌名 > 页面可见品牌(h1/logo) > title拆分品牌 > meta site_name
+  const brandName = metadata.ogSiteName || metadata.jsonLdBrandName || metadata.visibleBrand || metadata.titleBrandPart || metadata.siteName || '';
 
-  // 页面标题：优先 og:title，其次 twitter:title，最后拆分后的 title 页面部分
-  const pageTitle = metadata.ogTitle || metadata.twitterTitle || metadata.titlePagePart || metadata.title || '';
+  // 页面标题：优先 og:title（先拆分去掉末尾站点名冗余），其次 twitter:title，再 JSON-LD 标题，最后拆分后 title
+  const ogTitlePagePart = metadata.ogTitle ? splitHtmlTitle(metadata.ogTitle).pagePart : '';
+  const pageTitle = ogTitlePagePart || metadata.twitterTitle || metadata.jsonLdPageTitle || metadata.titlePagePart || metadata.title || '';
 
   return {
     // 品牌名（用于卡片命名时的品牌识别）
     brandName: brandName,
     // 页面标题（完整的页面级标题）
     pageTitle: pageTitle,
-    // 最佳描述（优先级：og:description > twitter:description > meta description）
-    bestDescription: metadata.ogDescription || metadata.twitterDescription || metadata.description || '',
+    // 最佳描述（优先级：og:description > twitter:description > JSON-LD > meta description）
+    bestDescription: metadata.ogDescription || metadata.twitterDescription || metadata.jsonLdDescription || metadata.description || '',
     // 站点名称
-    siteName: metadata.ogSiteName || metadata.siteName || '',
-    // 页面类型（og:type）
-    pageType: metadata.ogType || '',
+    siteName: metadata.ogSiteName || metadata.jsonLdSiteName || metadata.siteName || '',
+    // 页面类型（og:type 优先，JSON-LD @type 兜底）
+    pageType: metadata.ogType || metadata.jsonLdType || '',
     // 关键词
     keywords: metadata.keywords || '',
     // 语言
