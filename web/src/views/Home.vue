@@ -98,11 +98,14 @@
           <button v-if="searchQuery" class="clear-btn" @click="clearSearch" aria-label="清空">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
           </button>
-          <button @click="handleSearch" class="search-btn" title="搜索">
+          <button @click="handleSearch" class="search-btn" title="用 {{ selectedEngine?.label || '搜索引擎' }} 打开外网搜索（回车同效）">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
+          <div v-if="searchQuery && selectedEngine" class="search-engine-hint">
+            回车 / 点击搜索 → 用 <strong>{{ selectedEngine.label }}</strong> 打开外网检索 · 点下方卡片可直接打开
+          </div>
         </div>
         
         <div class="toolbar-actions">
@@ -3045,21 +3048,11 @@ function getCategoryCards(menuId, subMenuId) {
   return allCategoryCards.value[key] || [];
 }
 
-async function handleSearch() {
+function handleSearch() {
   const keyword = searchQuery.value.trim();
   if (!keyword) return;
 
-  // 站内优先：全站有匹配卡片时停留在过滤结果，不跳外站
-  if (allCards.value.length === 0) {
-    try { await loadAllCardsForSearch(); } catch (e) {}
-  }
-  const matched = filterCardsWithPinyin(allCards.value, keyword);
-  if (matched.length > 0) {
-    showToastMessage(`站内找到 ${matched.length} 张卡片，回车已定位`, 'success');
-    return;
-  }
-
-  // 无匹配 → 外跳当前搜索引擎
+  // 显式搜索：回车/搜索按钮恒等于用当前引擎打开外网搜索，不再被站内卡片截获
   const url = selectedEngine.value.url(keyword);
   window.open(url, '_blank');
   searchQuery.value = '';
@@ -5293,6 +5286,24 @@ async function saveCardEdit() {
   transform: translateY(-2px);
 }
 
+.search-engine-hint {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: 0.2px;
+  pointer-events: none;
+  z-index: 9;
+  white-space: nowrap;
+}
+.search-engine-hint strong {
+  color: #fff;
+  font-weight: 600;
+}
+
 .search-input {
   flex: 1;
   border: none;
@@ -5471,6 +5482,11 @@ async function saveCardEdit() {
     flex-direction: column;
     gap: 10px;
     padding: 0 16px;
+  }
+
+  .search-engine-hint {
+    white-space: normal;
+    font-size: 11px;
   }
   
   .search-container {
