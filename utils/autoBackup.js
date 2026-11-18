@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
-const archiver = require('archiver');
+const archiverModule = require('archiver');
+// archiver v8 仅导出 ESM 类，这里保持原有的 archiver('zip', opts) 调用形态
+const archiver = typeof archiverModule === 'function'
+  ? archiverModule
+  : (format, options) => new archiverModule.ZipArchive(options || {});
 const schedule = require('node-schedule');
 const { createClient } = require('webdav');
 const { decryptWebDAVConfig, generateBackupSignature } = require('./crypto');

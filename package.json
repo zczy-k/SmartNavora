@@ -8,16 +8,15 @@
   "main": "app.js",
   "overrides": {
     "@tootallnate/once": "^3.0.1",
-    "follow-redirects": "^1.15.12",
-    "minimatch": "^9.0.7",
-    "brace-expansion": "^2.1.4",
-    "qs": "6.16.0",
+    "follow-redirects": "^1.16.3",
+    "minimatch": "^11.0.9",
+    "qs": "^6.16.1",
     "nanoid": "^3.3.18",
     "tar": "^7.5.21",
-    "fast-xml-parser": "^5.3.8",
-    "ip-address": "^10.4.0",
-    "postcss": "^8.5.23",
-    "body-parser": "^2.3.0"
+    "fast-xml-parser": "^5.12.1",
+    "ip-address": "^10.7.6",
+    "postcss": "^8.5.33",
+    "body-parser": "^2.4.0"
   },
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run web:dev\"",
@@ -33,31 +32,31 @@
   },
   "dependencies": {
     "adm-zip": "^0.6.1",
-    "archiver": "^7.0.1",
-    "axios": "^1.18.0",
+    "archiver": "^8.0.0",
+    "axios": "^1.21.1",
     "bcryptjs": "^3.0.2",
     "cheerio": "^1.2.0",
-    "compression": "^1.8.1",
+    "compression": "^1.8.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.2.2",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
     "express-validator": "^7.3.2",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "multer": "^2.4.0",
+    "multer": "^2.5.0",
     "node-schedule": "^2.1.1",
-    "sanitize-html": "^2.17.7",
+    "sanitize-html": "^2.18.2",
     "sqlite3": "^5.1.7",
-    "undici": "^7.29.0",
+    "undici": "^7.30.2",
     "unzipper": "^0.12.3",
-    "webdav": "^5.9.0"
+    "webdav": "^5.11.0"
   },
   "engines": {
-    "node": ">=14",
+    "node": ">=20",
     "npm": ">=6"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^10.0.7"
   }
 }
