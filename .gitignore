@@ -21,6 +21,9 @@ database/*.bak*
 # Backups
 backups/
 
+# Icon cache (auto-fetched at runtime)
+data/
+
 # SSL Certificates
 certs/
 *.key

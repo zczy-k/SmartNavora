@@ -284,66 +284,66 @@ async function seedDefaultData() {
       // 插入默认卡片
       const cards = [
         // Home
-        { menu: 'Home', title: 'Baidu', url: 'https://www.baidu.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.baidu.com&sz=128', desc: '全球最大的中文搜索引擎' },
-        { menu: 'Home', title: 'Youtube', url: 'https://www.youtube.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.youtube.com&sz=128', desc: '全球最大的视频社区' },
-        { menu: 'Home', title: 'Gmail', url: 'https://mail.google.com', logo_url: 'https://api.xinac.net/icon/?url=https://mail.google.com&sz=128', desc: '' },
-        { menu: 'Home', title: 'GitHub', url: 'https://github.com', logo_url: 'https://api.xinac.net/icon/?url=https://github.com&sz=128', desc: '全球最大的代码托管平台' },
-        { menu: 'Home', title: 'ip.sb', url: 'https://ip.sb', logo_url: 'https://api.xinac.net/icon/?url=https://ip.sb&sz=128', desc: 'ip地址查询' },
-        { menu: 'Home', title: 'Cloudflare', url: 'https://dash.cloudflare.com', logo_url: 'https://api.xinac.net/icon/?url=https://dash.cloudflare.com&sz=128', desc: '全球最大的cdn服务商' },
-        { menu: 'Home', title: 'Huggingface', url: 'https://huggingface.co', logo_url: 'https://api.xinac.net/icon/?url=https://huggingface.co&sz=128', desc: '全球最大的开源模型托管平台' },
-        { menu: 'Home', title: 'ITDOG - 在线ping', url: 'https://www.itdog.cn/tcping', logo_url: 'https://api.xinac.net/icon/?url=https://www.itdog.cn&sz=128', desc: '在线tcping' },
-        { menu: 'Home', title: 'Ping0', url: 'https://ping0.cc', logo_url: 'https://api.xinac.net/icon/?url=https://ping0.cc&sz=128', desc: 'ip地址查询' },
-        { menu: 'Home', title: '浏览器指纹', url: 'https://www.browserscan.net/zh', logo_url: 'https://api.xinac.net/icon/?url=https://www.browserscan.net&sz=128', desc: '浏览器指纹查询' },
-        { menu: 'Home', title: 'Api测试', url: 'https://hoppscotch.io', logo_url: 'https://api.xinac.net/icon/?url=https://hoppscotch.io&sz=128', desc: '在线api测试工具' },
-        { menu: 'Home', title: '域名检查', url: 'https://who.cx', logo_url: 'https://api.xinac.net/icon/?url=https://who.cx&sz=128', desc: '域名可用性查询' },
-        { menu: 'Home', title: '域名比价', url: 'https://www.whois.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.whois.com&sz=128', desc: '域名价格比较' },
-        { menu: 'Home', title: 'NodeSeek', url: 'https://www.nodeseek.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.nodeseek.com&sz=128', desc: '主机论坛' },
-        { menu: 'Home', title: 'Linux do', url: 'https://linux.do', logo_url: 'https://api.xinac.net/icon/?url=https://linux.do&sz=128', desc: '新的理想型社区' },
-        { menu: 'Home', title: '免费接码', url: 'https://www.smsonline.cloud/zh', logo_url: 'https://api.xinac.net/icon/?url=https://www.smsonline.cloud&sz=128', desc: '免费接收短信验证码' },
-        { menu: 'Home', title: '订阅转换', url: 'https://sublink.eooce.com', logo_url: 'https://api.xinac.net/icon/?url=https://sublink.eooce.com&sz=128', desc: '最好用的订阅转换工具' },
-        { menu: 'Home', title: 'webssh', url: 'https://ssh.eooce.com', logo_url: 'https://api.xinac.net/icon/?url=https://ssh.eooce.com&sz=128', desc: '最好用的webssh终端管理工具' },
-        { menu: 'Home', title: '文件快递柜', url: 'https://filebox.nnuu.nyc.mn', logo_url: 'https://api.xinac.net/icon/?url=https://filebox.nnuu.nyc.mn&sz=128', desc: '文件输出分享' },
-        { menu: 'Home', title: '真实地址生成', url: 'https://address.nnuu.nyc.mn', logo_url: 'https://api.xinac.net/icon/?url=https://address.nnuu.nyc.mn&sz=128', desc: '基于当前ip生成真实的地址' },
+        { menu: 'Home', title: 'Baidu', url: 'https://www.baidu.com', desc: '全球最大的中文搜索引擎' },
+        { menu: 'Home', title: 'Youtube', url: 'https://www.youtube.com', desc: '全球最大的视频社区' },
+        { menu: 'Home', title: 'Gmail', url: 'https://mail.google.com', desc: '' },
+        { menu: 'Home', title: 'GitHub', url: 'https://github.com', desc: '全球最大的代码托管平台' },
+        { menu: 'Home', title: 'ip.sb', url: 'https://ip.sb', desc: 'ip地址查询' },
+        { menu: 'Home', title: 'Cloudflare', url: 'https://dash.cloudflare.com', desc: '全球最大的cdn服务商' },
+        { menu: 'Home', title: 'Huggingface', url: 'https://huggingface.co', desc: '全球最大的开源模型托管平台' },
+        { menu: 'Home', title: 'ITDOG - 在线ping', url: 'https://www.itdog.cn/tcping', desc: '在线tcping' },
+        { menu: 'Home', title: 'Ping0', url: 'https://ping0.cc', desc: 'ip地址查询' },
+        { menu: 'Home', title: '浏览器指纹', url: 'https://www.browserscan.net/zh', desc: '浏览器指纹查询' },
+        { menu: 'Home', title: 'Api测试', url: 'https://hoppscotch.io', desc: '在线api测试工具' },
+        { menu: 'Home', title: '域名检查', url: 'https://who.cx', desc: '域名可用性查询' },
+        { menu: 'Home', title: '域名比价', url: 'https://www.whois.com', desc: '域名价格比较' },
+        { menu: 'Home', title: 'NodeSeek', url: 'https://www.nodeseek.com', desc: '主机论坛' },
+        { menu: 'Home', title: 'Linux do', url: 'https://linux.do', desc: '新的理想型社区' },
+        { menu: 'Home', title: '免费接码', url: 'https://www.smsonline.cloud/zh', desc: '免费接收短信验证码' },
+        { menu: 'Home', title: '订阅转换', url: 'https://sublink.eooce.com', desc: '最好用的订阅转换工具' },
+        { menu: 'Home', title: 'webssh', url: 'https://ssh.eooce.com', desc: '最好用的webssh终端管理工具' },
+        { menu: 'Home', title: '文件快递柜', url: 'https://filebox.nnuu.nyc.mn', desc: '文件输出分享' },
+        { menu: 'Home', title: '真实地址生成', url: 'https://address.nnuu.nyc.mn', desc: '基于当前ip生成真实的地址' },
         // AI Stuff
-        { menu: 'Ai Stuff', title: 'Claude', url: 'https://claude.ai', logo_url: 'https://api.xinac.net/icon/?url=https://claude.ai&sz=128', desc: 'Anthropic Claude AI' },
-        { menu: 'Ai Stuff', title: 'Google Gemini', url: 'https://gemini.google.com', logo_url: 'https://api.xinac.net/icon/?url=https://gemini.google.com&sz=128', desc: 'Google Gemini大模型' },
-        { menu: 'Ai Stuff', title: '阿里千问', url: 'https://chat.qwenlm.ai', logo_url: 'https://api.xinac.net/icon/?url=https://chat.qwenlm.ai&sz=128', desc: '阿里云千问大模型' },
-        { menu: 'Ai Stuff', title: 'Kimi', url: 'https://www.kimi.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.kimi.com&sz=128', desc: '月之暗面Moonshot AI' },
+        { menu: 'Ai Stuff', title: 'Claude', url: 'https://claude.ai', desc: 'Anthropic Claude AI' },
+        { menu: 'Ai Stuff', title: 'Google Gemini', url: 'https://gemini.google.com', desc: 'Google Gemini大模型' },
+        { menu: 'Ai Stuff', title: '阿里千问', url: 'https://chat.qwenlm.ai', desc: '阿里云千问大模型' },
+        { menu: 'Ai Stuff', title: 'Kimi', url: 'https://www.kimi.com', desc: '月之暗面Moonshot AI' },
         // AI Stuff - 子菜单卡片
-        { subMenu: 'AI chat', title: 'ChatGPT', url: 'https://chat.openai.com', logo_url: 'https://api.xinac.net/icon/?url=https://chat.openai.com&sz=128', desc: 'OpenAI官方AI对话' },
-        { subMenu: 'AI chat', title: 'Deepseek', url: 'https://www.deepseek.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.deepseek.com&sz=128', desc: 'Deepseek AI搜索' },
-        { subMenu: 'AI tools', title: 'Cursor', url: 'https://www.cursor.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.cursor.com&sz=128', desc: 'AI编程工具' },
-        { subMenu: 'AI tools', title: 'V0', url: 'https://v0.dev', logo_url: 'https://api.xinac.net/icon/?url=https://v0.dev&sz=128', desc: 'AI生成前端代码' },
+        { subMenu: 'AI chat', title: 'ChatGPT', url: 'https://chat.openai.com', desc: 'OpenAI官方AI对话' },
+        { subMenu: 'AI chat', title: 'Deepseek', url: 'https://www.deepseek.com', desc: 'Deepseek AI搜索' },
+        { subMenu: 'AI tools', title: 'Cursor', url: 'https://www.cursor.com', desc: 'AI编程工具' },
+        { subMenu: 'AI tools', title: 'V0', url: 'https://v0.dev', desc: 'AI生成前端代码' },
         // Cloud
-        { menu: 'Cloud', title: '阿里云', url: 'https://www.aliyun.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.aliyun.com&sz=128', desc: '阿里云官网' },
-        { menu: 'Cloud', title: '腾讯云', url: 'https://cloud.tencent.com', logo_url: 'https://api.xinac.net/icon/?url=https://cloud.tencent.com&sz=128', desc: '腾讯云官网' },
-        { menu: 'Cloud', title: '甲骨文云', url: 'https://cloud.oracle.com', logo_url: 'https://api.xinac.net/icon/?url=https://cloud.oracle.com&sz=128', desc: 'Oracle Cloud' },
-        { menu: 'Cloud', title: '亚马逊云', url: 'https://aws.amazon.com', logo_url: 'https://api.xinac.net/icon/?url=https://aws.amazon.com&sz=128', desc: 'Amazon AWS' },
-        { menu: 'Cloud', title: 'DigitalOcean', url: 'https://www.digitalocean.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.digitalocean.com&sz=128', desc: 'DigitalOcean VPS' },
-        { menu: 'Cloud', title: 'Vultr', url: 'https://www.vultr.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.vultr.com&sz=128', desc: 'Vultr VPS' },
+        { menu: 'Cloud', title: '阿里云', url: 'https://www.aliyun.com', desc: '阿里云官网' },
+        { menu: 'Cloud', title: '腾讯云', url: 'https://cloud.tencent.com', desc: '腾讯云官网' },
+        { menu: 'Cloud', title: '甲骨文云', url: 'https://cloud.oracle.com', desc: 'Oracle Cloud' },
+        { menu: 'Cloud', title: '亚马逊云', url: 'https://aws.amazon.com', desc: 'Amazon AWS' },
+        { menu: 'Cloud', title: 'DigitalOcean', url: 'https://www.digitalocean.com', desc: 'DigitalOcean VPS' },
+        { menu: 'Cloud', title: 'Vultr', url: 'https://www.vultr.com', desc: 'Vultr VPS' },
         // Software
-        { menu: 'Software', title: 'Hellowindows', url: 'https://hellowindows.cn', logo_url: 'https://api.xinac.net/icon/?url=https://hellowindows.cn&sz=128', desc: 'windows系统及office下载' },
-        { menu: 'Software', title: '奇迹秀', url: 'https://www.qijishow.com/down', logo_url: 'https://api.xinac.net/icon/?url=https://www.qijishow.com&sz=128', desc: '设计师的百宝箱' },
-        { menu: 'Software', title: '易破解', url: 'https://www.ypojie.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.ypojie.com&sz=128', desc: '精品windows软件' },
-        { menu: 'Software', title: '软件先锋', url: 'https://topcracked.com', logo_url: 'https://api.xinac.net/icon/?url=https://topcracked.com&sz=128', desc: '精品windows软件' },
-        { menu: 'Software', title: 'Macwk', url: 'https://www.macwk.com', logo_url: 'https://api.xinac.net/icon/?url=https://www.macwk.com&sz=128', desc: '精品Mac软件' },
-        { menu: 'Software', title: 'Macsc', url: 'https://mac.macsc.com', logo_url: 'https://api.xinac.net/icon/?url=https://mac.macsc.com&sz=128', desc: '' },
+        { menu: 'Software', title: 'Hellowindows', url: 'https://hellowindows.cn', desc: 'windows系统及office下载' },
+        { menu: 'Software', title: '奇迹秀', url: 'https://www.qijishow.com/down', desc: '设计师的百宝箱' },
+        { menu: 'Software', title: '易破解', url: 'https://www.ypojie.com', desc: '精品windows软件' },
+        { menu: 'Software', title: '软件先锋', url: 'https://topcracked.com', desc: '精品windows软件' },
+        { menu: 'Software', title: 'Macwk', url: 'https://www.macwk.com', desc: '精品Mac软件' },
+        { menu: 'Software', title: 'Macsc', url: 'https://mac.macsc.com', desc: '' },
         // Tools
-        { menu: 'Tools', title: 'JSON工具', url: 'https://www.json.cn', logo_url: 'https://api.xinac.net/icon/?url=https://www.json.cn&sz=128', desc: 'JSON格式化/校验' },
-        { menu: 'Tools', title: 'base64工具', url: 'https://www.qqxiuzi.cn/bianma/base64.htm', logo_url: 'https://api.xinac.net/icon/?url=https://www.qqxiuzi.cn&sz=128', desc: '在线base64编码解码' },
-        { menu: 'Tools', title: '二维码生成', url: 'https://cli.im', logo_url: 'https://api.xinac.net/icon/?url=https://cli.im&sz=128', desc: '二维码生成工具' },
-        { menu: 'Tools', title: 'JS混淆', url: 'https://obfuscator.io', logo_url: 'https://api.xinac.net/icon/?url=https://obfuscator.io&sz=128', desc: '在线Javascript代码混淆' },
-        { menu: 'Tools', title: 'Python混淆', url: 'https://freecodingtools.org/tools/obfuscator/python', logo_url: 'https://api.xinac.net/icon/?url=https://freecodingtools.org&sz=128', desc: '在线python代码混淆' },
-        { menu: 'Tools', title: 'Remove.photos', url: 'https://remove.photos/zh-cn', logo_url: 'https://api.xinac.net/icon/?url=https://remove.photos&sz=128', desc: '一键抠图' },
+        { menu: 'Tools', title: 'JSON工具', url: 'https://www.json.cn', desc: 'JSON格式化/校验' },
+        { menu: 'Tools', title: 'base64工具', url: 'https://www.qqxiuzi.cn/bianma/base64.htm', desc: '在线base64编码解码' },
+        { menu: 'Tools', title: '二维码生成', url: 'https://cli.im', desc: '二维码生成工具' },
+        { menu: 'Tools', title: 'JS混淆', url: 'https://obfuscator.io', desc: '在线Javascript代码混淆' },
+        { menu: 'Tools', title: 'Python混淆', url: 'https://freecodingtools.org/tools/obfuscator/python', desc: '在线python代码混淆' },
+        { menu: 'Tools', title: 'Remove.photos', url: 'https://remove.photos/zh-cn', desc: '一键抠图' },
         // Tools - Dev Tools 子菜单卡片
-        { subMenu: 'Dev Tools', title: 'Uiverse', url: 'https://uiverse.io/elements', logo_url: 'https://api.xinac.net/icon/?url=https://uiverse.io&sz=128', desc: 'CSS动画和设计元素' },
-        { subMenu: 'Dev Tools', title: 'Icons8', url: 'https://igoutu.cn/icons', logo_url: 'https://api.xinac.net/icon/?url=https://igoutu.cn&sz=128', desc: '免费图标和设计资源' },
+        { subMenu: 'Dev Tools', title: 'Uiverse', url: 'https://uiverse.io/elements', desc: 'CSS动画和设计元素' },
+        { subMenu: 'Dev Tools', title: 'Icons8', url: 'https://igoutu.cn/icons', desc: '免费图标和设计资源' },
         // Other
-        { menu: 'Other', title: 'Outlook', url: 'https://outlook.live.com', logo_url: 'https://api.xinac.net/icon/?url=https://outlook.live.com&sz=128', desc: '微软Outlook邮箱' },
-        { menu: 'Other', title: 'Proton Mail', url: 'https://account.proton.me', logo_url: 'https://api.xinac.net/icon/?url=https://account.proton.me&sz=128', desc: '安全加密邮箱' },
-        { menu: 'Other', title: 'QQ邮箱', url: 'https://mail.qq.com', logo_url: 'https://api.xinac.net/icon/?url=https://mail.qq.com&sz=128', desc: '腾讯QQ邮箱' },
-        { menu: 'Other', title: '雅虎邮箱', url: 'https://mail.yahoo.com', logo_url: 'https://api.xinac.net/icon/?url=https://mail.yahoo.com&sz=128', desc: '雅虎邮箱' },
-        { menu: 'Other', title: '10分钟临时邮箱', url: 'https://linshiyouxiang.net', logo_url: 'https://api.xinac.net/icon/?url=https://linshiyouxiang.net&sz=128', desc: '10分钟临时邮箱' },
+        { menu: 'Other', title: 'Outlook', url: 'https://outlook.live.com', desc: '微软Outlook邮箱' },
+        { menu: 'Other', title: 'Proton Mail', url: 'https://account.proton.me', desc: '安全加密邮箱' },
+        { menu: 'Other', title: 'QQ邮箱', url: 'https://mail.qq.com', desc: '腾讯QQ邮箱' },
+        { menu: 'Other', title: '雅虎邮箱', url: 'https://mail.yahoo.com', desc: '雅虎邮箱' },
+        { menu: 'Other', title: '10分钟临时邮箱', url: 'https://linshiyouxiang.net', desc: '10分钟临时邮箱' },
       ];
 
       let cardCount = 0;
@@ -361,14 +361,14 @@ async function seedDefaultData() {
           if (subMenuId) {
             await dbRun(
               'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc) VALUES (?, ?, ?, ?, ?, ?)',
-              [null, subMenuId, card.title, card.url, card.logo_url, card.desc]
+              [null, subMenuId, card.title, card.url, null, card.desc]
             );
             cardCount++;
           }
         } else if (menuMap[card.menu]) {
           await dbRun(
             'INSERT INTO cards (menu_id, sub_menu_id, title, url, logo_url, desc) VALUES (?, ?, ?, ?, ?, ?)',
-            [menuMap[card.menu], null, card.title, card.url, card.logo_url, card.desc]
+            [menuMap[card.menu], null, card.title, card.url, null, card.desc]
           );
           cardCount++;
         }
@@ -393,6 +393,14 @@ async function seedDefaultData() {
         await dbRun('INSERT INTO friends (title, url, logo) VALUES (?, ?, ?)', [title, url, logo]);
       }
     }
+
+    // 图标统一由 /icons/:host 提供，清掉历史自动生成的 CDN 图标地址（用户自定义的保留）
+    await dbRun(`UPDATE cards SET logo_url = NULL WHERE logo_url LIKE '%api.xinac.net/icon%'
+      OR logo_url LIKE '%api.afmax.cn/so/ico%'
+      OR logo_url LIKE '%favicon.im/%'
+      OR logo_url LIKE '%icon.horse/icon/%'
+      OR logo_url LIKE '%google.com/s2/favicons%'
+      OR logo_url LIKE '/icons/%'`);
 
     // 提交事务
     await dbRun('COMMIT');

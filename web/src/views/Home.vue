@@ -814,10 +814,11 @@
               <label>Logo 链接</label>
               <input 
                 v-model="cardEditForm.logo_url" 
-                type="url" 
-                placeholder="请输入 Logo 图片链接"
+                type="text" 
+                placeholder="留空则自动获取站点图标，也可粘贴自定义图片地址"
                 class="batch-input"
               />
+              <div class="form-hint">留空时由服务器自动抓取；填了就优先显示你给的图片地址</div>
             </div>
             <div class="form-group">
               <label>描述</label>
@@ -7092,6 +7093,12 @@ async function saveCardEdit() {
   font-size: 14px;
   font-weight: 500;
   color: #374151;
+}
+
+.form-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #9ca3af;
 }
 
 /* 标签选择区域 */

@@ -6,6 +6,7 @@ const auth = require('./authMiddleware');
 const { triggerDebouncedBackup } = require('../utils/autoBackup');
 const { detectDuplicates, getDuplicateMatch } = require('../utils/urlNormalizer');
 const { autoGenerateForCards } = require('./ai');
+const { sanitizeLogoUrl, ensureIcon, hostOf } = require('./icon');
 const router = express.Router();
 
 const INVALID_LINK_TIMEOUT_MS = 8000;
@@ -566,7 +567,8 @@ router.patch('/batch-update', auth, (req, res) => {
 
 // 新增卡片
 router.post('/', auth, (req, res) => {
-  const { menu_id, sub_menu_id, title, url, logo_url, desc, order, section } = req.body;
+  const { menu_id, sub_menu_id, title, url, desc, order, section } = req.body;
+  const logo_url = sanitizeLogoUrl(req.body.logo_url);
   const clientId = req.headers['x-client-id'];
   
   // 先检查是否重复
@@ -597,6 +599,7 @@ router.post('/', auth, (req, res) => {
         const cardId = this.lastID;
         
         triggerDebouncedBackup(clientId, { type: 'cards_updated' });
+        setImmediate(() => ensureIcon(hostOf(url)));
         
         // 异步触发 AI 自动生成（不阻塞响应）
         setImmediate(() => autoGenerateForCards([cardId]));
@@ -609,7 +612,8 @@ router.post('/', auth, (req, res) => {
 
 // 更新卡片
 router.put('/:id', auth, (req, res) => {
-  const { menu_id, sub_menu_id, title, url, logo_url, desc, order, section } = req.body;
+  const { menu_id, sub_menu_id, title, url, desc, order, section } = req.body;
+  const logo_url = sanitizeLogoUrl(req.body.logo_url);
   const { id } = req.params;
   const clientId = req.headers['x-client-id'];
 
@@ -632,6 +636,7 @@ router.put('/:id', auth, (req, res) => {
         if (!card) return res.status(404).json({error: '卡片不存在'});
         
         triggerDebouncedBackup(clientId, { type: 'cards_updated' }); // 触发自动备份和SSE广播
+        setImmediate(() => ensureIcon(hostOf(url)));
         res.json({ 
           success: true,
           changed: changes,

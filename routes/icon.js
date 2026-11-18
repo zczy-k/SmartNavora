@@ -1,177 +1,257 @@
 const express = require('express');
-const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 
-const ICON_CACHE_DIR = path.join(__dirname, '../public/icons/cache');
-const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+const router = express.Router();
 
-const CDN_PROVIDERS = [
-  (domain) => `https://api.xinac.net/icon/?url=https://${domain}&sz=128`,
-  (domain) => `https://www.google.com/s2/favicons?domain=${domain}&sz=128`,
-  (domain) => `https://icon.horse/icon/${domain}`,
-  (domain) => `https://api.afmax.cn/so/ico/index.php?r=https://${domain}&sz=128`,
-  (domain) => `https://favicon.im/${domain}?larger=true`,
-];
+const ICON_DIR = process.env.ICON_DIR || path.join(__dirname, '../data/icons');
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_BYTES = 256 * 1024;
+const SOURCE_TIMEOUT_MS = 2500;
+const TOTAL_BUDGET_MS = 6000;
+const HOST_COOLDOWN_MS = 10 * 60 * 1000;
+const BREAKER_THRESHOLD = 3;
+const BREAKER_OPEN_MS = 30 * 60 * 1000;
+const MAX_OUTBOUND = 8;
+const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-if (!fs.existsSync(ICON_CACHE_DIR)) {
-  fs.mkdirSync(ICON_CACHE_DIR, { recursive: true });
+// Node 18+ 自带全局 fetch；低版本回退到 undici（若安装在位），都没有则直接走字母兜底
+let fetchImpl = typeof fetch === 'function' ? fetch : null;
+if (!fetchImpl) {
+  try { fetchImpl = require('undici').fetch; } catch (e) { fetchImpl = null; }
 }
 
-const pendingRequests = new Map();
+const SOURCES = [
+  { id: 'google', url: (h) => `https://www.google.com/s2/favicons?domain=${encodeURIComponent(h)}&sz=128` },
+  { id: 'iconhorse', url: (h) => `https://icon.horse/icon/${encodeURIComponent(h)}` },
+  { id: 'faviconim', url: (h) => `https://favicon.im/${encodeURIComponent(h)}?larger=true` },
+  { id: 'xinac', url: (h) => `https://api.xinac.net/icon/?url=${encodeURIComponent('https://' + h)}&sz=128` },
+  { id: 'afmax', url: (h) => `https://api.afmax.cn/so/ico/index.php?r=${encodeURIComponent('https://' + h)}&sz=128` },
+];
 
-router.get('/', async (req, res) => {
-  const { url } = req.query;
-  
-  if (!url) {
-    return res.status(400).json({ error: 'Missing url parameter' });
-  }
+const LEGACY_ICON_PATTERN = /(api\.xinac\.net\/icon|api\.afmax\.cn\/so\/ico|favicon\.im\/|icon\.horse\/icon|google\.com\/s2\/favicons)|^\/icons\//i;
 
-  let domain;
+const breakers = new Map();
+const hostCooldowns = new Map();
+const inflight = new Map();
+let outbound = 0;
+let googleGlobeHash = null;
+
+fs.mkdirSync(ICON_DIR, { recursive: true });
+
+function normalizeHost(raw) {
+  const host = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, '')
+    .replace(/\.$/, '')
+    .replace(/^www\./, '');
+  if (!host || host.length > 253) return null;
+  if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/.test(host)) return null;
+  return host;
+}
+
+function hostOf(url) {
   try {
-    domain = new URL(url).hostname;
+    return normalizeHost(new URL(url).hostname);
   } catch {
-    return res.status(400).json({ error: 'Invalid URL' });
+    return null;
   }
+}
 
-  const hash = crypto.createHash('md5').update(domain).digest('hex');
-  const cachePath = path.join(ICON_CACHE_DIR, `${hash}.png`);
+function sanitizeLogoUrl(value) {
+  const logo = String(value || '').trim();
+  if (!logo) return null;
+  if (LEGACY_ICON_PATTERN.test(logo)) return null;
+  if (!/^https?:\/\//i.test(logo) && !logo.startsWith('/')) return null;
+  return logo;
+}
 
+function sniffImageType(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'image/gif';
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp';
+  if (buf[0] === 0x00 && buf[1] === 0x00 && (buf[2] === 0x01 || buf[2] === 0x02) && buf[3] === 0x00) return 'image/x-icon';
+  return null;
+}
+
+async function fetchBytes(url, timeoutMs) {
+  if (!fetchImpl) return null;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), Math.max(500, timeoutMs)) : null;
   try {
-    if (fs.existsSync(cachePath)) {
-      const stat = fs.statSync(cachePath);
-      if (Date.now() - stat.mtimeMs < CACHE_MAX_AGE) {
-        res.set('Cache-Control', 'public, max-age=604800');
-        res.set('Content-Type', 'image/png');
-        return res.sendFile(cachePath);
-      }
-    }
-  } catch (e) {}
-
-  if (pendingRequests.has(domain)) {
-    const pending = pendingRequests.get(domain);
-    pending.push(res);
-    return;
+    const res = await fetchImpl(url, {
+      signal: controller ? controller.signal : undefined,
+      redirect: 'follow',
+      headers: { 'User-Agent': UA, Accept: 'image/*,*/*;q=0.8' },
+    });
+    if (!res.ok) return null;
+    const declared = Number(res.headers.get('content-length') || 0);
+    if (declared > MAX_BYTES) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > MAX_BYTES) return null;
+    return buf;
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
+}
 
-  pendingRequests.set(domain, []);
+function isBreakerOpen(id) {
+  const b = breakers.get(id);
+  return !!(b && b.openUntil > Date.now());
+}
 
-  let iconBuffer = null;
-  let contentType = 'image/png';
+function recordSourceFailure(id) {
+  const b = breakers.get(id) || { fails: 0, openUntil: 0 };
+  b.fails += 1;
+  if (b.fails >= BREAKER_THRESHOLD) {
+    b.openUntil = Date.now() + BREAKER_OPEN_MS;
+    b.fails = 0;
+    console.log(`[icons] source ${id} 熔断 ${Math.round(BREAKER_OPEN_MS / 60000)} 分钟`);
+  }
+  breakers.set(id, b);
+}
 
-  for (let i = 0; i < CDN_PROVIDERS.length; i++) {
-    try {
-      const cdnUrl = CDN_PROVIDERS[i](domain);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      
-      const response = await fetch(cdnUrl, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      
-      clearTimeout(timeout);
+function recordSourceSuccess(id) {
+  breakers.set(id, { fails: 0, openUntil: 0 });
+}
 
-      if (response.ok) {
-        const buffer = Buffer.from(await response.arrayBuffer());
-        
-        if (buffer.length > 100) {
-          iconBuffer = buffer;
-          contentType = response.headers.get('content-type') || 'image/png';
-          break;
-        }
-      }
-    } catch (e) {
+function warmGoogleGlobeHash() {
+  const probe = `https://www.google.com/s2/favicons?domain=invalid-${Date.now()}-probe.invalid&sz=128`;
+  fetchBytes(probe, SOURCE_TIMEOUT_MS)
+    .then((buf) => {
+      if (buf) googleGlobeHash = buf.toString('base64');
+    })
+    .catch(() => {});
+}
+
+async function fetchFromSources(host) {
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
+  for (const source of SOURCES) {
+    if (Date.now() >= deadline) break;
+    if (isBreakerOpen(source.id)) continue;
+    if (outbound >= MAX_OUTBOUND) break;
+
+    outbound += 1;
+    const buf = await fetchBytes(source.url(host), Math.min(SOURCE_TIMEOUT_MS, deadline - Date.now()));
+    outbound -= 1;
+
+    if (!buf) {
+      recordSourceFailure(source.id);
       continue;
     }
+    if (!sniffImageType(buf)) continue;
+    if (source.id === 'google' && googleGlobeHash && buf.toString('base64') === googleGlobeHash) continue;
+
+    recordSourceSuccess(source.id);
+    return buf;
   }
+  return null;
+}
 
-  const waitingResponses = pendingRequests.get(domain) || [];
-  pendingRequests.delete(domain);
+function readCached(host) {
+  try {
+    const file = path.join(ICON_DIR, host);
+    const stat = fs.statSync(file);
+    const buf = fs.readFileSync(file);
+    const type = sniffImageType(buf);
+    if (!type) return null;
+    return { buf, type, fresh: Date.now() - stat.mtimeMs < CACHE_TTL_MS };
+  } catch {
+    return null;
+  }
+}
 
-  if (iconBuffer) {
+function getOrFetch(host) {
+  if (inflight.has(host)) return inflight.get(host);
+  const task = (async () => {
+    const buf = await fetchFromSources(host);
+    if (!buf) return null;
     try {
-      fs.writeFileSync(cachePath, iconBuffer);
+      fs.writeFileSync(path.join(ICON_DIR, host), buf);
     } catch (e) {
-      console.error('Failed to cache icon:', e.message);
+      console.error('[icons] 写入缓存失败:', e.message);
     }
+    return buf;
+  })().finally(() => inflight.delete(host));
+  inflight.set(host, task);
+  return task;
+}
 
-    res.set('Content-Type', contentType);
-    res.set('Cache-Control', 'public, max-age=604800');
-    res.send(iconBuffer);
+async function ensureIcon(host) {
+  const normalized = normalizeHost(host);
+  if (!normalized) return null;
+  const cached = readCached(normalized);
+  if (cached && cached.fresh) return cached.buf;
+  return getOrFetch(normalized);
+}
 
-    waitingResponses.forEach(waitingRes => {
-      try {
-        waitingRes.set('Content-Type', contentType);
-        waitingRes.set('Cache-Control', 'public, max-age=604800');
-        waitingRes.send(iconBuffer);
-      } catch (e) {}
+function sendIcon(res, type, buf) {
+  res.set('Content-Type', type);
+  res.set('Cache-Control', 'public, max-age=604800');
+  res.send(buf);
+}
+
+function sweepExpired() {
+  fs.readdir(ICON_DIR, (err, files) => {
+    if (err) return;
+    const now = Date.now();
+    files.forEach((name) => {
+      const file = path.join(ICON_DIR, name);
+      fs.stat(file, (statErr, stat) => {
+        if (statErr || !stat.isFile()) return;
+        if (now - stat.mtimeMs > CACHE_TTL_MS * 2) fs.unlink(file, () => {});
+      });
     });
-  } else {
-    const defaultIconPath = path.join(__dirname, '../public/icons/common/default-favicon.png');
-    
-    if (fs.existsSync(defaultIconPath)) {
-      res.set('Cache-Control', 'public, max-age=86400');
-      res.sendFile(defaultIconPath);
-      
-      waitingResponses.forEach(waitingRes => {
-        try {
-          waitingRes.set('Cache-Control', 'public, max-age=86400');
-          waitingRes.sendFile(defaultIconPath);
-        } catch (e) {}
-      });
-    } else {
-      res.status(404).json({ error: 'Icon not found' });
-      waitingResponses.forEach(waitingRes => {
-        try {
-          waitingRes.status(404).json({ error: 'Icon not found' });
-        } catch (e) {}
-      });
+  });
+}
+
+const iconLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.get('/:host', iconLimiter, async (req, res) => {
+  const host = normalizeHost(req.params.host);
+  if (!host) return res.status(400).set('Cache-Control', 'no-store').end();
+
+  const cached = readCached(host);
+  if (cached && cached.fresh) return sendIcon(res, cached.type, cached.buf);
+
+  if ((hostCooldowns.get(host) || 0) > Date.now()) {
+    if (cached) return sendIcon(res, cached.type, cached.buf);
+    return res.status(404).set('Cache-Control', 'no-store').end();
+  }
+
+  try {
+    const buf = await getOrFetch(host);
+    if (buf) {
+      const type = sniffImageType(buf);
+      if (type) return sendIcon(res, type, buf);
     }
+  } catch (e) {
+    console.error('[icons] 取图异常:', e.message);
   }
+
+  if (cached) return sendIcon(res, cached.type, cached.buf);
+  hostCooldowns.set(host, Date.now() + HOST_COOLDOWN_MS);
+  res.status(404).set('Cache-Control', 'no-store').end();
 });
 
-router.delete('/cache', (req, res) => {
-  try {
-    const files = fs.readdirSync(ICON_CACHE_DIR);
-    let deleted = 0;
-    
-    files.forEach(file => {
-      try {
-        fs.unlinkSync(path.join(ICON_CACHE_DIR, file));
-        deleted++;
-      } catch (e) {}
-    });
-    
-    res.json({ success: true, deleted });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-router.get('/stats', (req, res) => {
-  try {
-    const files = fs.readdirSync(ICON_CACHE_DIR);
-    let totalSize = 0;
-    
-    files.forEach(file => {
-      try {
-        const stat = fs.statSync(path.join(ICON_CACHE_DIR, file));
-        totalSize += stat.size;
-      } catch (e) {}
-    });
-    
-    res.json({
-      cachedIcons: files.length,
-      totalSizeBytes: totalSize,
-      totalSizeMB: (totalSize / 1024 / 1024).toFixed(2)
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
+warmGoogleGlobeHash();
+sweepExpired();
+setInterval(sweepExpired, SWEEP_INTERVAL_MS).unref();
 
 module.exports = router;
+module.exports.hostOf = hostOf;
+module.exports.normalizeHost = normalizeHost;
+module.exports.sanitizeLogoUrl = sanitizeLogoUrl;
+module.exports.ensureIcon = ensureIcon;

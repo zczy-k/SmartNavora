@@ -18,17 +18,20 @@
              @click="handleLinkClick($event, card)"
              @contextmenu.prevent
              class="card-link">
-            <img
-              class="link-icon"
-              :ref="(el) => el && setupIconLazyLoad(el, card)"
-              :src="placeholderIcon"
-              :data-url="card.url"
-              alt=""
-              loading="lazy"
-              decoding="async"
-              draggable="false"
-              @error="onImgError($event, card)"
-              @contextmenu.prevent>
+            <span class="icon-box" :data-letter="letterOf(card)" :style="{ '--icon-hue': hueOf(card) }">
+              <img
+                v-if="iconSrc(card)"
+                class="link-icon"
+                :src="iconSrc(card)"
+                :data-chain-idx="0"
+                alt=""
+                loading="lazy"
+                decoding="async"
+                draggable="false"
+                @load="onIconLoad"
+                @error="onIconError($event, card)"
+                @contextmenu.prevent>
+            </span>
             <span class="link-text" @contextmenu.prevent>{{ truncate(card.title) }}</span>
           </a>
         <div v-if="isCardSelected(card)" class="card-selected-badge">✓</div>
@@ -93,7 +96,6 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-import { useIconLoader } from '../composables/useIconLoader';
 
 const props = defineProps({
   cards: Array,
@@ -117,43 +119,69 @@ const emit = defineEmits([
 ]);
 
 const cardGridRef = ref(null);
-const placeholderIcon = '/icons/common/default-favicon.png';
 
-const { setupLazyLoad, queueIcon } = useIconLoader();
-
-const iconCleanups = new Map();
-
-function getOriginUrl(url) {
+function hostOf(url) {
   try {
-    const urlObj = new URL(url);
-    return urlObj.origin;
+    return new URL(url).hostname.toLowerCase().replace(/:\d+$/, '').replace(/^www\./, '');
   } catch {
-    return null;
+    return '';
   }
 }
 
-function setupIconLazyLoad(el, card) {
-  if (!el || !card.url) return;
-  
-  if (iconCleanups.has(card.id)) {
-    iconCleanups.get(card.id)();
+function iconSrc(card) {
+  const custom = String(card.logo_url || '').trim();
+  if (custom) return custom;
+  const host = hostOf(card.url);
+  return host ? `/icons/${host}` : '';
+}
+
+function iconChain(card) {
+  const custom = String(card.logo_url || '').trim();
+  const host = hostOf(card.url);
+  const chain = [];
+  if (custom) chain.push(custom);
+  if (host) {
+    chain.push(`/icons/${host}`);
+    chain.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`);
+    chain.push(`https://api.xinac.net/icon/?url=${encodeURIComponent('https://' + host)}&sz=128`);
   }
-  
-  if (card.logo_url) {
-    el.src = card.logo_url;
+  return chain;
+}
+
+function letterOf(card) {
+  const source = String(card.title || '').trim() || hostOf(card.url) || '?';
+  return [...source][0].toUpperCase();
+}
+
+function hueOf(card) {
+  const key = hostOf(card.url) || String(card.title || '');
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  }
+  return hash % 360;
+}
+
+function onIconLoad(event) {
+  const el = event.target;
+  el.classList.add('icon-loaded');
+  el.classList.remove('icon-failed');
+}
+
+function onIconError(event, card) {
+  const el = event.target;
+  const chain = iconChain(card);
+  const idx = Number(el.dataset.chainIdx || 0);
+  const next = idx + 1;
+
+  if (next < chain.length) {
+    el.dataset.chainIdx = String(next);
+    el.src = chain[next];
     return;
   }
-  
-  const originUrl = getOriginUrl(card.url);
-  if (!originUrl) {
-    el.src = placeholderIcon;
-    return;
-  }
-  
-  const cleanup = setupLazyLoad(el, originUrl, card.id);
-  if (cleanup) {
-    iconCleanups.set(card.id, cleanup);
-  }
+
+  el.classList.remove('icon-loaded');
+  el.classList.add('icon-failed');
 }
 
 onMounted(() => {
@@ -162,8 +190,6 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleEscKey);
-  iconCleanups.forEach(cleanup => cleanup());
-  iconCleanups.clear();
 });
 
 function handleEscKey(e) {
@@ -337,22 +363,6 @@ onUnmounted(() => {
   document.removeEventListener('scroll', closeContextMenu);
 });
 
-function onImgError(e, card) {
-  if (e.target._retried) {
-    e.target.src = placeholderIcon;
-    return;
-  }
-  
-  e.target._retried = true;
-  
-  const originUrl = getOriginUrl(card.url);
-  if (originUrl) {
-    queueIcon(originUrl, e.target, card.id);
-  } else {
-    e.target.src = placeholderIcon;
-  }
-}
-
 function truncate(str) {
   if (!str) return '';
   return str.length > 20 ? str.slice(0, 20) + '...' : str;
@@ -416,7 +426,7 @@ function isCardSelected(card) {
     height: auto;
     border-radius: 16px;
   }
-  .link-icon {
+  .icon-box {
     width: 34px;
     height: 34px;
   }
@@ -436,10 +446,13 @@ function isCardSelected(card) {
     height: auto;
     border-radius: 18px;
   }
-  .link-icon {
+  .icon-box {
     width: 36px;
     height: 36px;
     margin-bottom: 8px;
+  }
+  .icon-box::before {
+    font-size: 16px;
   }
   .link-text {
     font-size: 12px;
@@ -460,10 +473,13 @@ function isCardSelected(card) {
     min-height: 90px;
     border-radius: 16px;
   }
-  .link-icon {
+  .icon-box {
     width: 32px;
     height: 32px;
     margin-bottom: 6px;
+  }
+  .icon-box::before {
+    font-size: 14px;
   }
   .link-text {
     font-size: 11px;
@@ -484,10 +500,13 @@ function isCardSelected(card) {
     min-height: 85px;
     border-radius: 14px;
   }
-  .link-icon {
+  .icon-box {
     width: 28px;
     height: 28px;
     margin-bottom: 5px;
+  }
+  .icon-box::before {
+    font-size: 12px;
   }
   .link-text {
     font-size: 10px;
@@ -663,23 +682,55 @@ function isCardSelected(card) {
   -webkit-user-select: none;
 }
 
-.link-icon {
+/* 图标：字母兜底垫在底层，图片加载成功后覆盖 */
+.icon-box {
+  position: relative;
   width: 34px;
   height: 34px;
+  flex: none;
+  margin-bottom: 8px;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.icon-box::before {
+  content: attr(data-letter);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: hsl(var(--icon-hue, 210) 45% 42% / 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.link-icon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.25));
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
-  margin-bottom: 8px;
-  opacity: 0.8;
+  opacity: 0;
+  transition: opacity 0.25s ease;
   pointer-events: none;
   -webkit-user-drag: none;
 }
 
-.link-icon[src]:not([src=""]):not([src$="default-favicon.png"]) {
+.link-icon.icon-loaded {
   opacity: 1;
 }
 
-.link-item:hover .link-icon {
+.link-icon.icon-failed {
+  display: none;
+}
+
+.link-item:hover .icon-box {
   transform: scale(1.12);
 }
 

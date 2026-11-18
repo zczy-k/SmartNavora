@@ -6,6 +6,7 @@ const auth = require('./authMiddleware');
 const { getDuplicateMatch } = require('../utils/urlNormalizer');
 const { triggerDebouncedBackup } = require('../utils/autoBackup');
 const { autoGenerateForCards } = require('./ai');
+const { sanitizeLogoUrl, ensureIcon, hostOf } = require('./icon');
 const router = express.Router();
 
 // 批量解析网址信息
@@ -60,14 +61,8 @@ router.post('/parse', auth, async (req, res) => {
       }
       description = description.trim().substring(0, 200);
 
-      // 提取Logo - 使用Google Favicon服务避免CORS问题
-      let logo = $('link[rel="icon"]').attr('href') || 
-                 $('link[rel="shortcut icon"]').attr('href') ||
-                 $('link[rel="apple-touch-icon"]').attr('href') ||
-                 $('meta[property="og:image"]').attr('content');
-
-      // 统一使用xinac.net CDN，确保国内外都能访问
-      logo = `https://api.xinac.net/icon/?url=${urlObj.origin}&sz=128`;
+      // 预览用同源图标地址；用户不改则入库时置空，由服务端统一出图
+      const logo = `/icons/${urlObj.hostname.toLowerCase().replace(/^www\./, '')}`;
 
       results.push({
         url: url,
@@ -86,7 +81,7 @@ router.post('/parse', auth, async (req, res) => {
         results.push({
           url: url,
           title: urlObj.hostname,
-          logo: `https://api.xinac.net/icon/?url=${urlObj.origin}&sz=128`,
+          logo: `/icons/${urlObj.hostname.toLowerCase().replace(/^www\./, '')}`,
           description: '',
           success: false,
           error: error.message
@@ -294,7 +289,8 @@ router.post('/add', auth, (req, res) => {
 
       // 逐个插入非重复卡片
       uniqueCards.forEach((card, index) => {
-        const { title, url, logo, description, section } = card;
+        const { title, url, description, section } = card;
+        const logo = sanitizeLogoUrl(card.logo);
         const order = nextOrder + index;
 
       db.run(
@@ -309,6 +305,7 @@ router.post('/add', auth, (req, res) => {
           if (!hasError) {
             const cardId = this.lastID;
             insertedIds.push(cardId);
+            setImmediate(() => ensureIcon(hostOf(url)));
             
             completed++;
             if (completed === uniqueCards.length) {
