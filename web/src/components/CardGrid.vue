@@ -712,6 +712,8 @@ function isCardSelected(card) {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  border-radius: 22%;
+  background: rgba(255, 255, 255, 0.08);
   filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.25));
   opacity: 0;
   transition: opacity 0.25s ease;
@@ -721,6 +723,11 @@ function isCardSelected(card) {
 
 .link-icon.icon-loaded {
   opacity: 1;
+}
+
+/* 图标加载成功后遮住底下的字母兜底层，避免透过半透明底/透明 PNG 显出来 */
+.icon-box:has(.link-icon.icon-loaded)::before {
+  visibility: hidden;
 }
 
 .link-icon.icon-failed {
