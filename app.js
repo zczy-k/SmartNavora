@@ -248,6 +248,22 @@ const staticDir = fs.existsSync(path.join(__dirname, 'web/dist/index.html'))
 
 console.log(`✓ Using static files from: ${staticDir}`);
 
+// web/dist 与 public 同时存在时只会用 web/dist，残留的旧 dist 会让部署看起来"没生效"
+try {
+  const distDir = path.join(__dirname, 'web', 'dist');
+  const otherDir = staticDir === distDir ? path.join(__dirname, 'public') : distDir;
+  const entryOf = (dir) => {
+    const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+    const m = html.match(/assets\/index-[A-Za-z0-9_-]+\.js/);
+    return m ? m[0] : null;
+  };
+  const active = entryOf(staticDir);
+  const other = entryOf(otherDir);
+  if (active && other && active !== other) {
+    console.warn(`⚠ 静态目录版本不一致: 生效的 ${staticDir} → ${active}，另一份 ${otherDir} → ${other}`);
+  }
+} catch (e) {}
+
 app.use(express.static(staticDir, {
   maxAge: '1d',
   etag: true,

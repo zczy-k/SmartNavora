@@ -1085,7 +1085,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch } from 'vue';
+import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch, h } from 'vue';
 import { getMenus, getCards, getAllCards, getFrequentCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, reorderSearchEngines, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, getCardSections, removeFromFrequent, instance as apiInstance } from '../api';
 
 // AI API 调用（使用 api.js 的 instance 以确保全局 401 拦截器生效）
@@ -1098,7 +1098,32 @@ import MenuBar from '../components/MenuBar.vue';
 import MobileDrawer from '../components/MobileDrawer.vue';
 import { filterCardsWithPinyin } from '../utils/pinyin';
 import { getDuplicateMatch, extractPathname, formatUrlPreview, isMultiPathDomainAllowed } from '../utils/urlNormalizer';
-const CardGrid = defineAsyncComponent(() => import('../components/CardGrid.vue'));
+const importCardGrid = () => import('../components/CardGrid.vue');
+const retryCardGridImport = (tries) => importCardGrid().catch((err) => {
+  if (tries <= 0) throw err;
+  return new Promise((r) => setTimeout(r, 400)).then(() => retryCardGridImport(tries - 1));
+});
+const reloadOnceForChunk = () => {
+  const key = 'cardgrid-chunk-reload-at';
+  const last = Number(sessionStorage.getItem(key) || 0);
+  if (Date.now() - last < 15000) return false;
+  sessionStorage.setItem(key, String(Date.now()));
+  location.reload();
+  return true;
+};
+const CardGridError = {
+  name: 'CardGridError',
+  render: () => h('div', { style: 'padding:24px;text-align:center;color:#fff;opacity:.85' }, '卡片组件加载失败，请刷新页面（Ctrl+F5）')
+};
+// 重新部署后浏览器可能仍持有旧 index.html，异步 chunk 会 404：重试后整页刷新拿新入口，仍失败则显式提示而不是静默空白
+const CardGrid = defineAsyncComponent({
+  loader: () => retryCardGridImport(2).catch((err) => {
+    if (reloadOnceForChunk()) return new Promise(() => {});
+    throw err;
+  }),
+  errorComponent: CardGridError,
+  delay: 200
+});
 
 const mobileDrawerVisible = ref(false);
 // 存储"展开"状态而非"折叠"

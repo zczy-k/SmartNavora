@@ -1,12 +1,11 @@
 <template>
     <div ref="cardGridRef" class="container card-grid" :class="{ 'selection-mode': selectionMode }">
-      <div v-for="(card, index) in cards" :key="card.id"
+      <div v-for="card in cards" :key="card.id"
            class="link-item"
            :class="{
              'selected': isCardSelected(card)
            }"
            :data-card-id="card.id"
-           :style="{ '--card-index': index }"
            draggable="false"
            @contextmenu.prevent="handleContextMenu($event, card)"
            @click="handleCardClick($event, card)"
@@ -542,8 +541,6 @@ function isCardSelected(card) {
   -webkit-user-drag: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  animation: cardFadeIn 0.35s ease both;
-  animation-delay: calc(var(--card-index, 0) * 25ms);
 }
 
 .link-item:hover {
@@ -800,16 +797,6 @@ function isCardSelected(card) {
   }
 }
 
-@keyframes cardFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
 
 .context-menu-item {
   display: flex;
