@@ -313,12 +313,17 @@ try {
 
 // 构建戳：前端据它判断手里的 HTML 是否落后于当前部署（HTML 被 nginx 静态托管时拿不到缓存头兜底）
 let buildIdCache = null;
+let buildIdMtime = 0;
 function getBuildId() {
-  if (buildIdCache) return buildIdCache;
   try {
-    const html = fs.readFileSync(path.join(staticDir, 'index.html'), 'utf8');
+    const file = path.join(staticDir, 'index.html');
+    // 每次按 mtime 校验：部署替换文件后即使进程没重启也能立即吐出新的构建戳
+    const mtime = fs.statSync(file).mtimeMs;
+    if (buildIdCache && mtime === buildIdMtime) return buildIdCache;
+    const html = fs.readFileSync(file, 'utf8');
     const m = html.match(/name="build-id"\s+content="([^"]+)"/);
-    if (m) buildIdCache = m[1];
+    buildIdMtime = mtime;
+    buildIdCache = m ? m[1] : null;
   } catch {}
   return buildIdCache;
 }

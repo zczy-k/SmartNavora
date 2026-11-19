@@ -194,7 +194,7 @@ async function ensureIcon(host) {
 
 function sendIcon(res, type, buf) {
   res.set('Content-Type', type);
-  res.set('Cache-Control', 'public, max-age=604800');
+  res.set('Cache-Control', 'public, max-age=2592000, stale-while-revalidate=604800, immutable');
   res.send(buf);
 }
 

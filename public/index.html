@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
-    <meta name="build-id" content="mwn0ydeo" />
+    <meta name="build-id" content="mwn12qz6" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=0">
     <title>CNI新标签页</title>
@@ -73,6 +73,40 @@
         100% { transform: translateX(340%); }
       }
     </style>
+    <script>
+      // 用户选了非默认壁纸时，head 解析阶段就发起预载，与入口 JS 并行下载，
+      // 避免等 Vue 挂载后 loadBgSetting() 才起步、白白拖长启动画面时间
+      (function () {
+        try {
+          var id = parseInt(localStorage.getItem('nav_bg_id') || '1');
+          if (!id || id === 1) return;
+          var map = {
+            2: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?w=1920&h=1080&fit=crop',
+            3: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1920&h=1080&fit=crop',
+            4: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=1920&h=1080&fit=crop',
+            5: 'https://images.unsplash.com/photo-1531366936337-7c912a4589a7?w=1920&h=1080&fit=crop',
+            6: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1920&h=1080&fit=crop',
+            7: 'https://images.unsplash.com/photo-1522383225653-ed111181a951?w=1920&h=1080&fit=crop',
+            8: 'https://images.unsplash.com/photo-1509316785289-025f5b846b35?w=1920&h=1080&fit=crop',
+            9: 'https://images.unsplash.com/photo-1439066615861-d1af74d74000?w=1920&h=1080&fit=crop',
+            10: 'https://images.unsplash.com/photo-1534088568595-a066f410bcda?w=1920&h=1080&fit=crop',
+            11: 'https://images.unsplash.com/photo-1476820865390-c52aeebb9891?w=1920&h=1080&fit=crop',
+            12: 'https://images.unsplash.com/photo-1432405972618-c60b0225b8f9?w=1920&h=1080&fit=crop',
+            13: 'https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=1920&h=1080&fit=crop',
+            14: 'https://images.unsplash.com/photo-1514565131-fce0801e5785?w=1920&h=1080&fit=crop',
+            15: 'https://images.unsplash.com/photo-1559128010-7c1ad6e1b6a5?w=1920&h=1080&fit=crop'
+          };
+          var url = map[id];
+          if (!url) return;
+          var link = document.createElement('link');
+          link.rel = 'preload';
+          link.as = 'image';
+          link.setAttribute('fetchpriority', 'high');
+          link.href = url;
+          document.head.appendChild(link);
+        } catch (e) {}
+      })();
+    </script>
     <script>
       // 首屏渲染完成后闲时校验部署版本：HTML 被静态托管无缓存头时，浏览器启发式缓存可能留住旧 HTML，
       // 这里比对服务端构建戳，落后则换 URL 静默刷一次（每浏览器每次部署只刷一次）
