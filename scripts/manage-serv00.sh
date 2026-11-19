@@ -114,13 +114,20 @@ verify_cache_headers() {
     fi
 
     if [ -n "$cc" ]; then
-        green "      ✔ 浏览器缓存头: ${cc}"
+        if printf '%s' "$cc" | grep -qiE 'max-age=(31536000|[3-9][0-9]{6,})'; then
+            green "      ✔ 浏览器缓存头: ${cc}"
+        else
+            yellow "      ! 浏览器缓存头为 ${cc}：assets 会被浏览器反复回源校验"
+            yellow "        修复: EdgeOne → 站点加速 → 规则引擎 → 新建规则"
+            yellow "        IF 路径 正则匹配 ^/assets/.* → 操作: 浏览器缓存 TTL 自定义 365 天 → 保存并发布"
+        fi
     else
         yellow "      ! 响应缺少 Cache-Control，浏览器每次都会回源校验"
         yellow "        一次性修复（只需做一次，脚本无法代设）:"
-        yellow "        EdgeOne 控制台 → 站点加速 → 缓存配置 → /assets/ 规则"
-        yellow "        → 浏览器缓存 TTL = 365 天（HTML 规则设 0）"
-        yellow "        注意: 规则引擎的 JSON 没有浏览器 TTL 字段，只改 JSON 不会产生该头"
+        yellow "        EdgeOne 控制台 → 站点加速 → 规则引擎 → 新建规则"
+        yellow "        IF 路径 正则匹配 ^/assets/.* → 操作: 浏览器缓存 TTL 自定义 365 天"
+        yellow "        全局浏览器缓存 TTL 保持「不缓存」，HTML 才不会拿到一年 max-age"
+        yellow "        注意: 缓存配置的差异化 JSON 只有节点缓存字段，浏览器 TTL 必须走规则引擎"
     fi
 }
 
