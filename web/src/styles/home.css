@@ -379,9 +379,10 @@
   -webkit-backdrop-filter: blur(16px);
   border-radius: 28px;
   padding: 0.4rem 0.6rem;
+  /* 投影向下射程必须小于到下一条横栏的间距（约 20px），否则会压出暗边 */
   box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.1),
-    0 2px 8px rgba(0, 0, 0, 0.05);
+    0 4px 14px rgba(0, 0, 0, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.05);
   flex: 1;
   position: relative;
   z-index: 10;
@@ -392,8 +393,8 @@
 .search-container:focus-within {
   background: rgba(255, 255, 255, 0.25);
   box-shadow: 
-    0 12px 40px rgba(24, 144, 255, 0.2),
-    0 4px 12px rgba(0, 0, 0, 0.1);
+    0 4px 13px rgba(24, 144, 255, 0.24),
+    0 2px 5px rgba(0, 0, 0, 0.08);
   border-color: rgba(255, 255, 255, 0.4);
   transform: translateY(-2px);
 }
@@ -452,7 +453,7 @@
   justify-content: center;
   transition: all 0.2s ease;
   position: relative;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
 }
 
 .toolbar-icon-btn:hover {
