@@ -688,41 +688,7 @@
     </div>
     
     <!-- 友情链接弹窗 -->
-    <div v-if="showFriendLinks" class="modal-overlay" @click="showFriendLinks = false">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>友情链接</h3>
-          <button @click="showFriendLinks = false" class="close-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 6L6 18M6 6l12 12"></path>
-            </svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <div class="friend-links-grid">
-            <a 
-              v-for="friend in friendLinks" 
-              :key="friend.id" 
-              :href="friend.url" 
-              target="_blank" 
-              class="friend-link-card"
-            >
-              <div class="friend-link-logo">
-                <img 
-                  :src="getFriendLogo(friend)" 
-                  :alt="friend.title"
-                  loading="lazy"
-                  @error="handleFriendLogoError($event, friend)"
-                />
-              </div>
-              <div class="friend-link-info">
-                <h4>{{ friend.title }}</h4>
-              </div>
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
+    <FriendLinksModal :show="showFriendLinks" :friends="friendLinks" @close="showFriendLinks = false" />
     
     <!-- 菜单编辑弹窗 -->
     <div v-if="showMenuModal" class="modal-overlay">
@@ -1018,31 +984,13 @@
     
     <!-- 操作进度弹窗 -->
     <transition name="modal">
-      <div v-if="showProgressModal" class="progress-modal-overlay">
-        <div class="progress-modal">
-          <div class="progress-header">
-            <span class="progress-icon" :class="progressStatus">
-              <svg v-if="progressStatus === 'loading'" class="spin" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-              </svg>
-              <svg v-else-if="progressStatus === 'success'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#52c41a" stroke-width="2">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                <polyline points="22 4 12 14.01 9 11.01"/>
-              </svg>
-              <svg v-else-if="progressStatus === 'error'" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ff4d4f" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="15" y1="9" x2="9" y2="15"/>
-                <line x1="9" y1="9" x2="15" y2="15"/>
-              </svg>
-            </span>
-            <span class="progress-title">{{ progressTitle }}</span>
-          </div>
-          <div class="progress-message">{{ progressMessage }}</div>
-          <button v-if="progressStatus !== 'loading'" @click="closeProgressModal" class="progress-close-btn">
-            确定
-          </button>
-        </div>
-      </div>
+      <ProgressModal
+        v-if="showProgressModal"
+        :status="progressStatus"
+        :title="progressTitle"
+        :message="progressMessage"
+        @close="closeProgressModal"
+      />
     </transition>
 
     <!-- 云端版本落后提醒弹窗 -->
@@ -1097,6 +1045,8 @@ const api = {
 };
 import MenuBar from '../components/MenuBar.vue';
 import MobileDrawer from '../components/MobileDrawer.vue';
+const FriendLinksModal = defineAsyncComponent(() => import('../components/FriendLinksModal.vue'));
+const ProgressModal = defineAsyncComponent(() => import('../components/ProgressModal.vue'));
 import { filterCardsWithPinyin } from '../utils/pinyin';
 import { getDuplicateMatch, extractPathname, formatUrlPreview, isMultiPathDomainAllowed } from '../utils/urlNormalizer';
 const importCardGrid = () => import('../components/CardGrid.vue');
@@ -2379,36 +2329,6 @@ onUnmounted(() => {
 });
 
 // 获取友情链接 logo（与首页卡片完全一致）
-function getFriendLogo(friend) {
-  // 自定义 logo 优先；否则与卡片一致，走服务端同源取图
-  if (friend.logo) return friend.logo;
-  const originUrl = getOriginUrl(friend.url);
-  if (originUrl) {
-    try {
-      return `/icons/${new URL(originUrl).hostname}`;
-    } catch {
-      // 解析失败走默认图
-    }
-  }
-  return '/default-favicon.png';
-}
-
-// 获取网站源地址（用于友情链接 logo）
-function getOriginUrl(url) {
-  if (!url) return '';
-  try {
-    const urlObj = new URL(url);
-    return urlObj.origin;
-  } catch {
-    return '';
-  }
-}
-
-// 取图失败降级到默认图标（服务端 /icons 已做多源熔断与磁盘缓存）
-function handleFriendLogoError(e) {
-  e.target.src = '/default-favicon.png';
-}
-
 // 关闭搜索引擎下拉菜单
 function closeEngineDropdown() {
   if (showEngineDropdown.value) {
