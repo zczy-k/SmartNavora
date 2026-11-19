@@ -73,7 +73,8 @@ SmartNavora 是一款自托管的 AI 智能导航站：**浏览器新标签页**
 ```yaml
 services:
   SmartNavora:
-    image: ghcr.io/zczy-k/smartnavora:latest
+    # 国内网络建议走 gh-proxy 加速；直连海外可换回 ghcr.io/zczy-k/smartnavora:latest
+    image: gh-proxy.com/docker/ghcr.io/zczy-k/smartnavora:latest
     container_name: SmartNavora
     ports:
       - "3000:3000"
@@ -110,10 +111,12 @@ docker run -d \
   -v $(pwd)/config:/app/config \
   -e ADMIN_PASSWORD=123456 \
   --restart unless-stopped \
-  ghcr.io/zczy-k/smartnavora:latest
+  gh-proxy.com/docker/ghcr.io/zczy-k/smartnavora:latest
 ```
 
 镜像由 GitHub Actions 在每次推送后自动构建并发布到 `ghcr.io/zczy-k/smartnavora`（`latest` + 分支/tag + commit 摘要标签）。
+
+> 🌏 **国内加速**：镜像地址在 `ghcr.io` 前拼接 `gh-proxy.com/docker/` 即可走国内加速（如 `gh-proxy.com/docker/ghcr.io/zczy-k/smartnavora:latest`），拉取内容与官方镜像完全一致（同一 digest）。备用域名 `gh-proxy.org`，两者等效；海外直连可去掉前缀。
 
 ---
 

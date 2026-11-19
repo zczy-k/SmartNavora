@@ -1,6 +1,7 @@
 services:
   SmartNavora:
-    image: ghcr.io/zczy-k/smartnavora:latest
+    # 国内网络建议走 gh-proxy 加速；直连海外可换回 ghcr.io/zczy-k/smartnavora:latest
+    image: gh-proxy.com/docker/ghcr.io/zczy-k/smartnavora:latest
     container_name: SmartNavora
     ports:
       - "3000:3000"
