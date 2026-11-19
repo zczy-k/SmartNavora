@@ -78,6 +78,52 @@ get_package_version() {
     grep -m1 '"version"' "$1/package.json" | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
 }
 
+# --- 缓存校验 ---
+# serv00 的 nodejs 站点由 nginx 直接输出 public/ 下的静态文件（官方文档 Static files 一节），
+# 账号没有 nginx 配置权限，.htaccess 也只对 php 站点生效，
+# 所以浏览器端 Cache-Control 只能由 EdgeOne 的「浏览器缓存 TTL」下发，脚本无法代设。
+# 部署/更新/修复前端结束后跑一次校验，缺什么直接打印出来。
+verify_cache_headers() {
+    local idx="$WORKDIR/public/index.html"
+    [ -f "$idx" ] || return 0
+    local asset
+    asset=$(grep -o '/assets/index-[A-Za-z0-9_-]*\.js' "$idx" 2>/dev/null | head -1)
+    [ -n "$asset" ] || return 0
+
+    echo ""
+    yellow "  [校验] 静态资源缓存: https://${CURRENT_DOMAIN}${asset}"
+    local h1 h2 eo cc
+    h1=$(curl -sI --max-time 10 "https://${CURRENT_DOMAIN}${asset}" 2>/dev/null | tr -d '\r' || true)
+    sleep 1
+    h2=$(curl -sI --max-time 10 "https://${CURRENT_DOMAIN}${asset}" 2>/dev/null | tr -d '\r' || true)
+    eo=$(printf '%s\n' "$h2" | awk 'tolower($1)=="eo-cache-status:"{print $2}')
+    cc=$(printf '%s\n' "$h2" | awk 'tolower($1)=="cache-control:"{sub(/^[^:]*:[ ]*/,""); print; exit}')
+
+    if [ -z "$h1" ] && [ -z "$h2" ]; then
+        yellow "      - 无法访问站点，跳过校验（稍后可手动重跑 fix）"
+        return 0
+    fi
+    if [ -n "$eo" ]; then
+        if [ "$eo" = "HIT" ]; then
+            green "      ✔ CDN 节点缓存命中 (EO-Cache-Status: HIT)"
+        else
+            yellow "      ! CDN 状态: ${eo}（新文件首次请求正常，再刷一次应变 HIT）"
+        fi
+    else
+        yellow "      - 未检测到 EO-Cache-Status：域名没走 EdgeOne 或未接入 CDN"
+    fi
+
+    if [ -n "$cc" ]; then
+        green "      ✔ 浏览器缓存头: ${cc}"
+    else
+        yellow "      ! 响应缺少 Cache-Control，浏览器每次都会回源校验"
+        yellow "        一次性修复（只需做一次，脚本无法代设）:"
+        yellow "        EdgeOne 控制台 → 站点加速 → 缓存配置 → /assets/ 规则"
+        yellow "        → 浏览器缓存 TTL = 365 天（HTML 规则设 0）"
+        yellow "        注意: 规则引擎的 JSON 没有浏览器 TTL 字段，只改 JSON 不会产生该头"
+    fi
+}
+
 # 执行部署（install/update 共用核心流程）
 deploy_app() {
     MODE="$1"
@@ -181,7 +227,9 @@ EOF
     # 重启
     yellow "  → 重启服务..."
     devil www restart "${CURRENT_DOMAIN}" > /dev/null 2>&1
-    
+
+    verify_cache_headers
+
     echo ""
     if [ "$MODE" = "update" ]; then
         green "✔ 更新完成！"
@@ -296,6 +344,7 @@ do_fix_frontend() {
     fi
     
     devil www restart "$CURRENT_DOMAIN" >/dev/null 2>&1
+    verify_cache_headers
     green "✔ 前端修复尝试完成"
 }
 
