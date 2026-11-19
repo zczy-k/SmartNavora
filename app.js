@@ -316,7 +316,9 @@ app.use(express.static(staticDir, {
   etag: true,
   lastModified: true,
   setHeaders: (res, filePath) => {
-    if (/\.html?$/i.test(filePath)) {
+    if (/[\\/]assets[\\/].+\.(js|css|woff2?|ttf|eot|svg|png|jpe?g|gif|webp|ico)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (/\.html?$/i.test(filePath)) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
