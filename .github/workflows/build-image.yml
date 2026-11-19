@@ -36,10 +36,32 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+      actions: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Cancel stale builds of this workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          node <<'EOF'
+          const { GH_TOKEN, REPO, GITHUB_RUN_ID } = process.env;
+          const headers = { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json' };
+          (async () => {
+            const url = `https://api.github.com/repos/${REPO}/actions/workflows/build-image.yml/runs?per_page=20`;
+            const j = await (await fetch(url, { headers })).json();
+            const stale = (j.workflow_runs || []).filter(r =>
+              ['in_progress', 'queued'].includes(r.status) && String(r.id) !== String(GITHUB_RUN_ID));
+            for (const r of stale) {
+              const res = await fetch(`https://api.github.com/repos/${REPO}/actions/runs/${r.id}/cancel`, { method: 'POST', headers });
+              console.log(`cancel ${r.id} (${r.head_sha.slice(0, 7)}, ${r.status}) -> ${res.status}`);
+            }
+            console.log(`kept current run ${GITHUB_RUN_ID}, cancelled ${stale.length} stale run(s)`);
+          })().catch(e => console.error('cancel-stale failed:', e.message));
+          EOF
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
