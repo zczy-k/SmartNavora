@@ -24,7 +24,6 @@
               {{ loadingUsername ? '修改中...' : '修改用户名' }}
             </button>
           </div>
-          <p v-if="messageUsername" :class="['message', messageTypeUsername]">{{ messageUsername }}</p>
         </div>
       </div>
 
@@ -48,7 +47,6 @@
               {{ loading ? '修改中...' : '修改密码' }}
             </button>
           </div>
-          <p v-if="message" :class="['message', messageType]">{{ message }}</p>
         </div>
       </div>
     </div>
@@ -58,19 +56,16 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { getUserProfile, changeUsername, changePassword } from '../../api';
+import { toast } from '../../composables/useToast';
 
 const oldPassword = ref('');
 const newPassword = ref('');
 const confirmPassword = ref('');
 const loading = ref(false);
-const message = ref('');
-const messageType = ref('success');
 const userInfo = ref({});
 
 const newUsername = ref('');
 const loadingUsername = ref(false);
-const messageUsername = ref('');
-const messageTypeUsername = ref('success');
 
 onMounted(async () => {
   await loadUserProfile();
@@ -102,7 +97,6 @@ async function handleChangeUsername() {
   }
   
   loadingUsername.value = true;
-  messageUsername.value = '';
   
   try {
     await changeUsername(newUsername.value);
@@ -120,12 +114,8 @@ async function handleChangeUsername() {
   }
 }
 
-function showUsernameMessage(text, type) {
-  messageUsername.value = text;
-  messageTypeUsername.value = type;
-  setTimeout(() => {
-    messageUsername.value = '';
-  }, 3000);
+function showUsernameMessage(text, type = 'success') {
+  toast(text, type, 3000);
 }
 
 async function handleChangePassword() {
@@ -145,7 +135,6 @@ async function handleChangePassword() {
   }
   
   loading.value = true;
-  message.value = '';
   
   try {
     await changePassword(oldPassword.value, newPassword.value);
@@ -160,21 +149,16 @@ async function handleChangePassword() {
   }
 }
 
-function showMessage(text, type) {
-  message.value = text;
-  messageType.value = type;
+function showMessage(text, type = 'success') {
+  toast(text, type, 3000);
   if (text === '密码修改成功' && type === 'success') {
     setTimeout(() => {
-      message.value = '2秒后自动退出登录,请使用新密码重新登录...';
+      toast('2秒后自动退出登录，请使用新密码重新登录...', 'info', 2000);
       setTimeout(() => {
         localStorage.removeItem('token');
         window.location.reload();
       }, 2000);
     }, 500);
-  } else {
-    setTimeout(() => {
-      message.value = '';
-    }, 3000);
   }
 }
 </script>

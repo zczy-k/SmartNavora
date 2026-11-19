@@ -246,29 +246,10 @@ async function cleanOldBackups(deviceName, type) {
     }
 }
 
-// 获取WebDAV客户端
+// 获取WebDAV客户端（公共层：utils/webdavClient）
 async function getWebDAVClient() {
-    const webdavConfigPath = path.join(__dirname, '..', 'config', '.webdav-config.json');
-    if (!fs.existsSync(webdavConfigPath)) {
-        return null;
-    }
-    
-    try {
-        const encryptedConfig = JSON.parse(fs.readFileSync(webdavConfigPath, 'utf-8'));
-        const webdavConfig = decryptWebDAVConfig(encryptedConfig);
-        
-        if (!webdavConfig) return null;
-        
-        const { getForcedIPv4Agents } = require('../utils/ipv4');
-        const { httpsAgent } = getForcedIPv4Agents();
-        return createClient(webdavConfig.url, {
-            username: webdavConfig.username,
-            password: webdavConfig.password,
-            httpsAgent
-        });
-    } catch (e) {
-        return null;
-    }
+    const { getClient } = require('../utils/webdavClient');
+    return getClient();
 }
 
 // 同步书签备份到WebDAV

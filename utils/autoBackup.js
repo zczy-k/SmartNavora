@@ -214,26 +214,8 @@ async function createBackupFile(prefix = 'auto') {
  * 获取WebDAV客户端
  */
 async function getWebDAVClient() {
-  const webdavConfigPath = getWebDAVConfigPath();
-  if (!fs.existsSync(webdavConfigPath)) {
-    return null;
-  }
-  
-  const encryptedConfig = JSON.parse(fs.readFileSync(webdavConfigPath, 'utf-8'));
-  const webdavConfig = decryptWebDAVConfig(encryptedConfig);
-  
-  if (!webdavConfig) {
-    return null;
-  }
-  
-  const decodedUrl = decodeURIComponent(webdavConfig.url);
-  const { getForcedIPv4Agents } = require('./ipv4');
-  const { httpsAgent } = getForcedIPv4Agents();
-  return createClient(decodedUrl, {
-    username: webdavConfig.username,
-    password: webdavConfig.password,
-    httpsAgent
-  });
+  const { getClient } = require('./webdavClient');
+  return getClient();
 }
 
 /**

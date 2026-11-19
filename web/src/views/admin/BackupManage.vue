@@ -48,10 +48,6 @@
       />
     </div>
 
-    <div v-if="message.text" :class="['message', message.type]">
-      {{ message.text }}
-    </div>
-
     <div class="backup-list">
       <div v-if="backups.length === 0 && !loading.list" class="empty-state">
         <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5">
@@ -133,9 +129,6 @@
         </button>
       </div>
 
-      <div v-if="message.text" :class="['message', message.type]">
-        {{ message.text }}
-      </div>
 
       <div v-if="!webdavConfig.configured" class="info-box">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2566d8" stroke-width="2">
@@ -192,9 +185,6 @@
 
     <!-- Auto Backup Configuration Tab -->
     <div v-show="activeTab === 'auto'" class="tab-content">
-      <div v-if="message.text" :class="['message', message.type]">
-        {{ message.text }}
-      </div>
 
       <div class="config-section">
         <h3>⚡ 自动备份配置</h3>
@@ -440,6 +430,7 @@
 
 <script setup>
 import { ref, onMounted, reactive } from 'vue';
+import { toast } from '../../composables/useToast';
 
 const activeTab = ref('local');
 const backups = ref([]);
@@ -473,8 +464,6 @@ const renameForm = reactive({
   oldName: '',
   newName: ''
 });
-
-const message = ref({ text: '', type: '' });
 
 const dialog = reactive({
   show: false,
@@ -537,13 +526,11 @@ async function apiRequest(url, options = {}) {
   return response.json();
 }
 
+// 统一走全局 toast：成功 4 秒、错误 6 秒，warning 映射为 info
 const showMessage = (text, type = 'success', duration = 4000) => {
-  message.value = { text, type };
-  // 成功消息显示4秒，错误消息显示6秒
+  const mappedType = type === 'warning' ? 'info' : type;
   const timeout = type === 'error' ? 6000 : duration;
-  setTimeout(() => {
-    message.value = { text: '', type: '' };
-  }, timeout);
+  toast(text, mappedType, timeout);
 };
 
 // 通知浏览器扩展刷新右键菜单（恢复备份后菜单数据可能已变化）
