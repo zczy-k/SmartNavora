@@ -1,7 +1,7 @@
-# SmartNavora - AI 智能导航网站 v1.44.15
+# SmartNavora - AI 智能导航网站 v1.44.16
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.44.15-brightgreen.svg)](https://github.com/zczy-k/SmartNavora/releases)
+[![Version](https://img.shields.io/badge/Version-1.44.16-brightgreen.svg)](https://github.com/zczy-k/SmartNavora/releases)
 [![Node](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
 [![Security](https://img.shields.io/badge/Security-Enhanced-success.svg)](docs/SECURITY.md)
 
@@ -246,7 +246,7 @@ npm run start:https      # HTTPS 启动（证书自动生成于 certs/，可用 
 
 ---
 
-## 🆕 v1.44.15 更新内容
+## 🆕 v1.44.16 更新内容
 
 - **扩展单实例置顶**：每个浏览器窗口有且只有一个扩展导航页，并固定在标签栏顶部；Edge 虚拟新标签页 URL 也能正确识别
 - **地址栏导航自动解钉**：在导航页地址栏搜索或跳转后，该页自动解除固定，顶部不再堆积搜索页
