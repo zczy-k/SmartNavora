@@ -32,6 +32,7 @@ COPY app.js config.js db.js start-with-https.js ./
 COPY routes/ ./routes/
 COPY middleware/ ./middleware/
 COPY utils/ ./utils/
+COPY knowledge/ ./knowledge/
 COPY scripts/ ./scripts/
 
 COPY --from=frontend-builder /app/dist ./web/dist
