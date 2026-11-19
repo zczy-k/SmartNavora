@@ -1432,8 +1432,9 @@ function waitBackgroundReady(timeout = 1500) {
       if (!done) { done = true; resolve(); }
     };
     try {
-      const savedId = parseInt(localStorage.getItem('nav_bg_id') || '0');
-      const bg = presetBackgrounds.find(b => b.id === savedId);
+      // 未保存选择时页面用的是 preset 1（内置 /background.webp），必须一并等待
+      const savedId = parseInt(localStorage.getItem('nav_bg_id') || '1');
+      const bg = presetBackgrounds.find(b => b.id === savedId) || presetBackgrounds[0];
       if (!bg || !bg.url) { finish(); return; }
       const timer = setTimeout(finish, timeout);
       const img = new Image();

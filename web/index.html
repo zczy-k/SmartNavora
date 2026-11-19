@@ -12,6 +12,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="CNI导航" />
     <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+    <!-- 首屏壁纸尽早开始下载，配合 boot-splash 等解码完成再撤 -->
+    <link rel="preload" as="image" href="/background.webp" fetchpriority="high" />
     <!-- 资源预加载提示 -->
     <link rel="preconnect" href="https://main.ssss.nyc.mn" crossorigin>
     <link rel="dns-prefetch" href="https://img.icons8.com">
