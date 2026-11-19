@@ -217,6 +217,7 @@ async function initializeDatabase() {
     if (!versionRow) {
       await dbRun('INSERT INTO data_version (id, version) VALUES (1, 1)');
     }
+    currentVersion = versionRow ? versionRow.version : 1;
 
     // 设置表（用于存储 AI 配置等）
     await dbRun(`CREATE TABLE IF NOT EXISTS settings (
@@ -419,11 +420,15 @@ const dbInitPromise = initializeDatabase();
 // 版本号超过100万时重置为1，避免无限增长
 const MAX_VERSION = 1000000;
 
+// 内存镜像，供缓存键等同步读取场景使用
+let currentVersion = null;
+
 async function incrementDataVersion() {
   try {
     const current = await dbGet('SELECT version FROM data_version WHERE id = 1');
     const newVersion = (current && current.version >= MAX_VERSION) ? 1 : (current?.version || 0) + 1;
     await dbRun('UPDATE data_version SET version = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1', [newVersion]);
+    currentVersion = newVersion;
     return newVersion; // 返回新版本号
   } catch (e) {
     console.error('递增数据版本号失败:', e);
@@ -435,11 +440,18 @@ async function incrementDataVersion() {
 async function getDataVersion() {
   try {
     const row = await dbGet('SELECT version FROM data_version WHERE id = 1');
-    return row ? row.version : 1;
+    const version = row ? row.version : 1;
+    currentVersion = version;
+    return version;
   } catch (e) {
     console.error('获取数据版本号失败:', e);
     return 1;
   }
+}
+
+// 同步读取内存中的版本号（未初始化时返回 0）
+function getVersionSync() {
+  return currentVersion == null ? 0 : currentVersion;
 }
 
 // ==================== AI 相关方法 ====================
@@ -664,13 +676,11 @@ async function getCardsByIds(ids) {
 // 更新卡片描述
 async function updateCardDescription(cardId, description) {
   await dbRun('UPDATE cards SET desc = ? WHERE id = ?', [description, cardId]);
-  await incrementDataVersion();
 }
 
 // 更新卡片名称
 async function updateCardName(cardId, name) {
   await dbRun('UPDATE cards SET title = ? WHERE id = ?', [name, cardId]);
-  await incrementDataVersion();
 }
 
 // 更新卡片名称和描述
@@ -690,7 +700,6 @@ async function updateCardNameAndDescription(cardId, name, description) {
   if (updates.length > 0) {
     params.push(cardId);
     await dbRun(`UPDATE cards SET ${updates.join(', ')} WHERE id = ?`, params);
-    await incrementDataVersion();
   }
 }
 
@@ -750,6 +759,7 @@ const dbWrapper = {
   initPromise: dbInitPromise,
   incrementDataVersion,
   getDataVersion,
+  getVersionSync,
   // AI 相关方法
   getAIConfig,
   saveAIConfig,

@@ -1087,6 +1087,7 @@
 <script setup>
 import { ref, onMounted, computed, defineAsyncComponent, onUnmounted, nextTick, watch, h } from 'vue';
 import { getMenus, getCards, getAllCards, getFrequentCards, getPromos, getFriends, verifyPassword, verifyToken, batchParseUrls, batchAddCards, batchUpdateCards, addCard, deleteCard, updateCard, getSearchEngines, parseSearchEngine, addSearchEngine, deleteSearchEngine, reorderSearchEngines, getDataVersion, addMenu, updateMenu, deleteMenu, addSubMenu, updateSubMenu, deleteSubMenu, getClientId, checkWebdavVersion, setAuthChallengeHandler, getCardSections, removeFromFrequent, instance as apiInstance } from '../api';
+import { useDataSync } from '../composables/useDataSync';
 
 // AI API 调用（使用 api.js 的 instance 以确保全局 401 拦截器生效）
 const api = {
@@ -2231,8 +2232,6 @@ function saveDataVersion(version) {
 }
 
 // SSE连接（实时接收数据版本变更）
-let sseConnection = null;
-let sseReconnectTimer = null;
 let isRefreshing = false;
 let deferredDataTimer = null;
 let deferredSearchTimer = null;
@@ -2356,91 +2355,15 @@ async function handleVersionChange(newVersion, senderId = null) {
   }
 }
 
-// 建立SSE连接
-function connectSSE() {
-  if (document.visibilityState === 'hidden') {
-    return;
-  }
-
-  if (sseConnection) {
-    sseConnection.close();
-  }
-  
-  try {
-    const clientId = getClientId();
-    sseConnection = new EventSource(`/api/sse/data-sync?clientId=${clientId}`);
-    
-    sseConnection.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-          if (data.type === 'connected') {
-            // 检查是否需要刷新
-            if (data.version !== cachedDataVersion && cachedDataVersion > 0) {
-              handleVersionChange(data.version, data.senderId);
-            } else {
-              saveDataVersion(data.version);
-            }
-          } else if (data.type === 'version_change') {
-            handleVersionChange(data.version, data.senderId);
-          }
-      } catch (e) {
-        // 忽略解析错误（可能是心跳）
-      }
-    };
-    
-    sseConnection.onerror = () => {
-      sseConnection?.close();
-      sseConnection = null;
-
-      if (document.visibilityState === 'hidden') {
-        return;
-      }
-      
-      // 延迟重连
-      if (sseReconnectTimer) clearTimeout(sseReconnectTimer);
-      sseReconnectTimer = setTimeout(connectSSE, 15000);
-    };
-  } catch (e) {
-    // SSE 连接失败，静默处理
-  }
-}
-
-// 页面可见性变化时重连SSE
-function handleVisibilityChange() {
-  if (document.visibilityState === 'visible') {
-    // 页面可见时，如果SSE断开则重连
-    if (!sseConnection || sseConnection.readyState === EventSource.CLOSED) {
-      connectSSE();
-    }
-  } else if (sseConnection) {
-    sseConnection.close();
-    sseConnection = null;
-    if (sseReconnectTimer) {
-      clearTimeout(sseReconnectTimer);
-      sseReconnectTimer = null;
-    }
-  }
-}
-
-// 注册页面可见性监听
-document.addEventListener('visibilitychange', handleVisibilityChange);
-
-// 初始化SSE连接
-connectSSE();
+// SSE 统一走组合式函数：无限重连 + 重连版本对账
+useDataSync('Home', ({ version }) => {
+  handleVersionChange(version);
+});
 
 onUnmounted(() => {
   document.removeEventListener('click', closeEngineDropdown);
-  document.removeEventListener('visibilitychange', handleVisibilityChange);
   document.removeEventListener('keydown', handleGlobalKeydown);
   
-  // 清理SSE连接
-  if (sseConnection) {
-    sseConnection.close();
-    sseConnection = null;
-  }
-  if (sseReconnectTimer) {
-    clearTimeout(sseReconnectTimer);
-  }
   if (deferredDataTimer) {
     clearTimeout(deferredDataTimer);
   }
@@ -2463,18 +2386,16 @@ onUnmounted(() => {
 
 // 获取友情链接 logo（与首页卡片完全一致）
 function getFriendLogo(friend) {
-  // 1. 默认使用 CDN 自动生成（与卡片逻辑一致）
+  // 自定义 logo 优先；否则与卡片一致，走服务端同源取图
+  if (friend.logo) return friend.logo;
   const originUrl = getOriginUrl(friend.url);
   if (originUrl) {
-    return `https://api.xinac.net/icon/?url=${originUrl}&sz=128`;
+    try {
+      return `/icons/${new URL(originUrl).hostname}`;
+    } catch {
+      // 解析失败走默认图
+    }
   }
-  
-  // 2. 如果 URL 解析失败，尝试使用数据库中的 logo
-  if (friend.logo) {
-    return friend.logo;
-  }
-  
-  // 3. 默认图标
   return '/default-favicon.png';
 }
 
@@ -2489,44 +2410,8 @@ function getOriginUrl(url) {
   }
 }
 
-// CDN 备用源列表（用于友情链接 logo 降级）
-const FRIEND_CDN_PROVIDERS = [
-  (url) => `https://api.xinac.net/icon/?url=${url}&sz=128`,           // CDN 1: xinac (国内)
-  (url) => `https://api.afmax.cn/so/ico/index.php?r=${url}&sz=128`,  // CDN 2: afmax (国内)
-  (url) => `https://icon.horse/icon/${url}`,                          // CDN 3: icon.horse
-  (url) => `https://www.google.com/s2/favicons?domain=${url}&sz=128`, // CDN 4: Google
-  (url) => `https://favicon.im/${url}?larger=true`,                   // CDN 5: favicon.im
-];
-
-// 处理友情链接 logo 加载错误（CDN 降级）
-function handleFriendLogoError(e, friend) {
-  const currentSrc = e.target.src;
-  const originUrl = getOriginUrl(friend.url);
-  
-  if (!originUrl) {
-    e.target.src = '/default-favicon.png';
-    return;
-  }
-  
-  // 尝试切换到下一个 CDN
-  for (let i = 0; i < FRIEND_CDN_PROVIDERS.length; i++) {
-    const cdnUrl = FRIEND_CDN_PROVIDERS[i](originUrl);
-    
-    if (currentSrc.includes('api.xinac.net') && i === 0 ||
-        currentSrc.includes('api.afmax.cn') && i === 1 ||
-        currentSrc.includes('icon.horse') && i === 2 ||
-        currentSrc.includes('www.google.com/s2/favicons') && i === 3 ||
-        currentSrc.includes('favicon.im') && i === 4) {
-      // 当前 CDN 失败，尝试下一个
-      if (i + 1 < FRIEND_CDN_PROVIDERS.length) {
-        e.target.src = FRIEND_CDN_PROVIDERS[i + 1](originUrl);
-        return;
-      }
-      break;
-    }
-  }
-  
-  // 最后降级到默认图标
+// 取图失败降级到默认图标（服务端 /icons 已做多源熔断与磁盘缓存）
+function handleFriendLogoError(e) {
   e.target.src = '/default-favicon.png';
 }
 
@@ -3150,8 +3035,12 @@ function syncCardCollectionsAfterChange({ updatedCard = null, deletedCardId = nu
 // 获取搜索引擎图标
 function getEngineIcon(engine) {
   if (engine.iconUrl) return engine.iconUrl;
-  const origin = new URL(engine.url('')).origin;
-  return `https://api.xinac.net/icon/?url=${origin}&sz=128`;
+  try {
+    const origin = new URL(engine.url('')).origin;
+    return `/icons/${new URL(origin).hostname}`;
+  } catch {
+    return '/default-favicon.png';
+  }
 }
 
 // 处理搜索引擎图标错误

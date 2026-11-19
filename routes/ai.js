@@ -1732,20 +1732,6 @@ router.get('/stats', authMiddleware, async (req, res) => {
 });
 
 // 旧版统计接口 (兼容)
-router.get('/empty-cards', authMiddleware, async (req, res) => {
-  try {
-    const { type, mode } = req.query;
-    if (mode === 'all') {
-      const cards = await db.getAllCards();
-      return res.json({ success: true, cards, total: cards.length });
-    }
-    const cards = await db.getCardsNeedingAI(type || 'both');
-    res.json({ success: true, cards, total: cards.length });
-  } catch (error) {
-    res.status(500).json({ success: false, message: '获取数据失败' });
-  }
-});
-
 // 高级筛选卡片
 router.post('/filter-cards', authMiddleware, async (req, res) => {
   try {

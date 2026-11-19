@@ -3,15 +3,49 @@
  * 用于向所有连接的客户端推送数据版本变更通知
  */
 
+const MAX_TOTAL_CLIENTS = 100;
+const MAX_CLIENTS_PER_IP = 3;
+
 // 存储所有SSE连接
 const clients = new Set();
+const ipCounts = new Map();
+
+function getClientIp(req) {
+  return (req && (req.ip || (req.socket && req.socket.remoteAddress))) || 'unknown';
+}
 
 /**
- * 添加SSE客户端连接
+ * 带限额的客户端注册：总数 100，单 IP 3。
+ * 超限返回 false，由调用方决定如何拒绝。
  */
+function tryAddClient(req, res) {
+  const ip = getClientIp(req);
+  const current = ipCounts.get(ip) || 0;
+
+  if (clients.size >= MAX_TOTAL_CLIENTS || current >= MAX_CLIENTS_PER_IP) {
+    return false;
+  }
+
+  clients.add(res);
+  ipCounts.set(ip, current + 1);
+
+  res.on('close', () => {
+    if (clients.delete(res)) {
+      const remaining = (ipCounts.get(ip) || 1) - 1;
+      if (remaining <= 0) {
+        ipCounts.delete(ip);
+      } else {
+        ipCounts.set(ip, remaining);
+      }
+    }
+  });
+
+  return true;
+}
+
 function addClient(res) {
   clients.add(res);
-  
+
   // 客户端断开时移除
   res.on('close', () => {
     clients.delete(res);
@@ -52,5 +86,6 @@ function broadcastVersionChange(version, clientId = null, payload = null) {
 
 module.exports = {
   addClient,
+  tryAddClient,
   broadcastVersionChange
 };

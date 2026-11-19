@@ -141,8 +141,6 @@ function iconChain(card) {
   if (custom) chain.push(custom);
   if (host) {
     chain.push(`/icons/${host}`);
-    chain.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=128`);
-    chain.push(`https://api.xinac.net/icon/?url=${encodeURIComponent('https://' + host)}&sz=128`);
   }
   return chain;
 }

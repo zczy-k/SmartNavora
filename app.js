@@ -79,7 +79,7 @@ const iconRoutes = require('./routes/icon');
 const compression = require('compression');
 const { helmetConfig, sanitizeMiddleware, generalLimiter } = require('./middleware/security');
 const { globalErrorHandler, notFoundHandler } = require('./middleware/errorHandler');
-const { addClient } = require('./utils/sseManager');
+const { tryAddClient } = require('./utils/sseManager');
 const app = express();
 
 // 简单的内存缓存
@@ -207,6 +207,52 @@ app.use(sanitizeMiddleware);
 // API请求限流（仅针对API路由）
 app.use('/api', generalLimiter);
 
+// 写操作成功后统一广播数据版本变更（登录/备份/书签/AI 自身已处理，排除避免重复）
+const NOTIFY_EXCLUDE_PREFIXES = [
+  '/api/auth',
+  '/api/users',
+  '/api/backup',
+  '/api/bookmark-sync',
+  '/api/ai',
+  '/api/extension'
+];
+// 纯校验/解析类 POST 不改变公共数据，不应 bump 版本
+const NOTIFY_EXCLUDE_EXACT = new Set([
+  '/api/login',
+  '/api/verify-password',
+  '/api/verify-token',
+  '/api/batch/parse',
+  '/api/batch/check-urls',
+  '/api/search-engines/parse'
+]);
+const NOTIFY_WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+// 点击只更新热度，广播会导致全站刷新，必须排除
+const CLICK_PATH_RE = /^\/api\/cards\/[^/]+\/click$/;
+// 排序/折叠属于本机偏好，不是公共数据变更
+const USER_SETTINGS_RE = /^\/api\/cards\/user-settings\//;
+
+app.use('/api', (req, res, next) => {
+  if (!NOTIFY_WRITE_METHODS.has(req.method)) return next();
+
+  const pathOnly = req.originalUrl.split('?')[0];
+  if (CLICK_PATH_RE.test(pathOnly) || USER_SETTINGS_RE.test(pathOnly)) return next();
+  if (NOTIFY_EXCLUDE_EXACT.has(pathOnly)) return next();
+  if (NOTIFY_EXCLUDE_PREFIXES.some(p => pathOnly === p || pathOnly.startsWith(p + '/'))) return next();
+
+  res.on('finish', () => {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      try {
+        const { notifyDataChange } = require('./utils/autoBackup');
+        notifyDataChange(req.get('X-Client-Id') || null).catch(() => {});
+      } catch (e) {
+        console.warn('数据变更广播失败:', e.message);
+      }
+    }
+  });
+
+  next();
+});
+
 // 缓存中间件（仅对GET请求）
 app.use((req, res, next) => {
   // 排除不应该缓存的路径
@@ -224,7 +270,8 @@ app.use((req, res, next) => {
     !noCachePaths.some(path => req.path.startsWith(path));
 
   if (shouldCache) {
-    const cacheKey = req.originalUrl;
+    // 缓存键绑定数据版本号：任何写操作 bump 版本后，旧缓存自动失效
+    const cacheKey = `${db.getVersionSync()}:${req.originalUrl}`;
     const cached = cache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       return res.json(cached.data);
@@ -314,24 +361,30 @@ app.use('/api/backup', backupRoutes);
 app.use('/api/bookmark-sync', bookmarkSyncRoutes);
 app.use('/api/ai', aiRoutes);
 
-// 数据版本号API（用于前端缓存同步）
-app.get('/api/data-version', async (req, res) => {
+// 数据版本号（前端缓存同步与扩展轮询共用同一实现）
+async function sendDataVersion(req, res) {
   // 禁止任何缓存
   res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
-  
+
   try {
     const version = await db.getDataVersion();
     res.json({ version });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.json({ version: 1 });
   }
-});
+}
+
+app.get('/api/data-version', sendDataVersion);
 
 // SSE端点 - 实时推送数据版本变更
 app.get('/api/sse/data-sync', async (req, res) => {
     const clientId = req.query.clientId || null;
+
+    if (!tryAddClient(req, res)) {
+      return res.status(503).json({ error: 'too many connections' });
+    }
     
     // 设置SSE响应头
     res.set({
@@ -356,8 +409,6 @@ app.get('/api/sse/data-sync', async (req, res) => {
       if (res.flush) res.flush();
     }
     
-    // 添加到客户端列表
-    addClient(res);
     
     // 保持连接（心跳，15秒间隔，防止反向代理超时断开）
     const heartbeat = setInterval(() => {
@@ -371,19 +422,8 @@ app.get('/api/sse/data-sync', async (req, res) => {
     });
   });
 
-// 版本查询API（供扩展轮询使用，非SSE）
-app.get('/api/sse/version', async (req, res) => {
-  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.set('Pragma', 'no-cache');
-  res.set('Expires', '0');
-  
-  try {
-    const version = await db.getDataVersion();
-    res.json({ version });
-  } catch (e) {
-    res.json({ version: 1 });
-  }
-});
+// 版本查询API（供扩展轮询使用，非SSE；与 /api/data-version 共用实现）
+app.get('/api/sse/version', sendDataVersion);
 
 // 启动定时备份任务
 try {
