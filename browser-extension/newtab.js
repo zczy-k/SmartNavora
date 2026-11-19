@@ -1,3 +1,47 @@
+// 单实例 + 置顶：每个窗口只保留一个导航新标签页并固定在标签栏顶部。
+// 新建标签页时若本窗口已有导航页，则激活已有的并关掉这个新的，避免越开越多。
+(function () {
+    if (!chrome.tabs || !chrome.tabs.getCurrent) return;
+    const HOME_URL = chrome.runtime.getURL('newtab.html');
+
+    function isHome(tab) {
+        return !!(tab && tab.url && tab.url.split('#')[0].split('?')[0].startsWith(HOME_URL));
+    }
+
+    function enforce() {
+        chrome.tabs.getCurrent(function (self) {
+            if (!self || typeof self.id !== 'number') return;
+            chrome.tabs.query({ windowId: self.windowId }, function (tabs) {
+                const homes = (tabs || []).filter(isHome);
+                if (!homes.some(t => t.id === self.id)) homes.push(self);
+                // 幸存者：已固定的优先，其次标签 id 最小（最早创建），保证所有页面算出同一个结果
+                homes.sort((a, b) => ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || (a.id - b.id));
+                const survivor = homes[0];
+
+                if (survivor.id !== self.id) {
+                    if (!survivor.pinned) {
+                        chrome.tabs.update(survivor.id, { pinned: true }, function () { void chrome.runtime.lastError; });
+                    }
+                    chrome.tabs.update(survivor.id, { active: true }, function () { void chrome.runtime.lastError; });
+                    chrome.tabs.remove(self.id, function () { void chrome.runtime.lastError; });
+                    return;
+                }
+
+                if (!self.pinned) {
+                    chrome.tabs.update(self.id, { pinned: true }, function () { void chrome.runtime.lastError; });
+                }
+                homes.slice(1).forEach(function (t) {
+                    chrome.tabs.remove(t.id, function () { void chrome.runtime.lastError; });
+                });
+            });
+        });
+    }
+
+    enforce();
+    // 再跑一次，覆盖"同时新建两个标签页"的竞态
+    setTimeout(enforce, 600);
+})();
+
 // 检查配置
 chrome.storage.sync.get(['navUrl'], function(result) {
     const navFrame = document.getElementById('navFrame');
