@@ -424,8 +424,7 @@ app.get('/api/sse/data-sync', async (req, res) => {
     });
   });
 
-// 版本查询API（供扩展轮询使用，非SSE；与 /api/data-version 共用实现）
-app.get('/api/sse/version', sendDataVersion);
+// 版本查询只有 /api/data-version 一个入口（前端 SSE 对账与浏览器扩展轮询共用）
 
 // 启动定时备份任务
 try {

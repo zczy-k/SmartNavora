@@ -397,7 +397,7 @@ async function checkDataVersionAndSync(forceRefresh = false) {
         const navServerUrl = config.navUrl.replace(/\/$/, '');
         
         // 获取当前版本号
-        const response = await fetch(`${navServerUrl}/api/sse/version?_t=${Date.now()}`, {
+        const response = await fetch(`${navServerUrl}/api/data-version?_t=${Date.now()}`, {
             cache: 'no-store'
         });
         

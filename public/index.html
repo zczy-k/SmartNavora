@@ -15,9 +15,60 @@
     <!-- 资源预加载提示 -->
     <link rel="preconnect" href="https://main.ssss.nyc.mn" crossorigin>
     <link rel="dns-prefetch" href="https://img.icons8.com">
-    <script type="module" crossorigin src="/assets/index-ZV_jAxpS.js"></script>
+    <script type="module" crossorigin src="/assets/index-512ZEZHA.js"></script>
   </head>
   <body style="margin:0;padding:0;background:#1a1a1a;">
-    <div id="app" style="min-height:100vh;background:#1a1a1a;"></div>
+    <div id="app" style="min-height:100vh;background:#1a1a1a;"></div>
+    <div id="boot-splash" aria-hidden="true">
+      <div class="boot-logo">CNI</div>
+      <div class="boot-bar"></div>
+    </div>
+    <style>
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9998;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: #1a1a1a;
+        transition: opacity .22s ease;
+      }
+      #boot-splash.out {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .boot-logo {
+        font: 700 30px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        letter-spacing: .36em;
+        text-indent: .36em;
+        color: rgba(255, 255, 255, .82);
+      }
+      .boot-bar {
+        position: relative;
+        width: 132px;
+        height: 2px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, .1);
+        overflow: hidden;
+      }
+      .boot-bar::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 42%;
+        height: 100%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, rgba(102, 126, 234, 0), #667eea);
+        animation: bootSlide 1.05s cubic-bezier(.45, .05, .55, .95) infinite;
+      }
+      @keyframes bootSlide {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(340%); }
+      }
+    </style>
   </body>
 </html>
