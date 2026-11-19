@@ -13,8 +13,8 @@
     <MobileDrawer
       :visible="mobileDrawerVisible"
       :menus="menus"
-      :activeMenuId="activeMenu?.id"
-      :activeSubMenuId="activeSubMenu?.id"
+      :activeMenuId="isFrequentView ? null : activeMenu?.id"
+      :activeSubMenuId="isFrequentView ? null : activeSubMenu?.id"
       @close="mobileDrawerVisible = false"
       @selectMenu="handleDrawerMenuSelect"
       @selectSubMenu="handleDrawerSubMenuSelect"
@@ -23,8 +23,8 @@
     <div class="menu-bar-fixed">
       <MenuBar
         :menus="menus"
-        :activeId="activeMenu?.id"
-        :activeSubMenuId="activeSubMenu?.id"
+        :activeId="isFrequentView ? null : activeMenu?.id"
+        :activeSubMenuId="isFrequentView ? null : activeSubMenu?.id"
         :isFrequentActive="isFrequentView"
         @select="selectMenu"
         @selectFrequent="handleSelectFrequent"
@@ -302,8 +302,8 @@
       </div>
     </div>
 
-    <!-- 卡片按分类分组显示 -->
-    <div class="cards-grouped-container" v-if="!activeSubMenu && activeMenu && groupedCards.length > 0">
+    <!-- 卡片按分类分组显示（常用视图下隐藏，避免与常用站点区块重复） -->
+    <div class="cards-grouped-container" v-if="!isFrequentView && !activeSubMenu && activeMenu && groupedCards.length > 0">
       <template v-for="(group, index) in groupedCards" :key="group.key">
         <div v-if="sortAndFilterCards(group.cards, group.subMenuId).length > 0" class="card-group">
           <div class="card-group-header" @click="toggleGroupCollapse(group.key)">
