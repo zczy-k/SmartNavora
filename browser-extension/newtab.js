@@ -34,14 +34,27 @@
                 const alive = new Set(tabs.map(t => t.id));
 
                 chrome.storage.session.get({ [REG_KEY]: [] }, function (store) {
-                    let registry = (store[REG_KEY] || [])
-                        .filter(e => e && alive.has(e.id) && e.windowId === self.windowId);
+                    const stored = Array.isArray(store[REG_KEY]) ? store[REG_KEY] : [];
+                    const byId = new Map(tabs.map(t => [t.id, t]));
+                    // 注册表里的标签一旦被导航到真实网址就不再算导航页，防止把普通页面当导航页关掉
+                    const isNavigatedAway = t => /^(https?|file|ftp):/i.test((t.url || t.pendingUrl) || '');
+                    // 其他窗口的注册信息原样保留，不能被本窗口覆盖（否则多窗口互相清空）
+                    const others = stored.filter(e => e && e.windowId !== self.windowId && alive.has(e.id));
+                    let registry = stored
+                        .filter(e => e && alive.has(e.id) && e.windowId === self.windowId)
+                        // 导航页被地址栏带到搜索结果等真实网址后不再固定在顶部
+                        .filter(e => {
+                            const t = byId.get(e.id);
+                            if (t && isNavigatedAway(t)) {
+                                if (t.pinned) chrome.tabs.update(e.id, { pinned: false }, function () { void chrome.runtime.lastError; });
+                                return false;
+                            }
+                            return true;
+                        });
                     if (!registry.some(e => e.id === self.id)) {
                         registry.push({ id: self.id, windowId: self.windowId });
                     }
                     const regIds = new Set(registry.map(e => e.id));
-                    // 注册表里的标签一旦被导航到真实网址就不再算导航页，防止把普通页面当导航页关掉
-                    const isNavigatedAway = t => /^(https?|file|ftp):/i.test((t.url || t.pendingUrl) || '');
 
                     const homes = tabs.filter(t =>
                         looksLikeHome(t) || (regIds.has(t.id) && !isNavigatedAway(t))
@@ -51,7 +64,12 @@
                     homes.sort((a, b) => ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || (a.id - b.id));
                     const survivor = homes[0];
 
-                    chrome.storage.session.set({ [REG_KEY]: [{ id: survivor.id, windowId: survivor.windowId }] });
+                    // 登记本窗口所有导航页（幸存者在前），它们之后若被地址栏带到真实网址，可据此解除固定
+                    chrome.storage.session.set({
+                        [REG_KEY]: others
+                            .concat([{ id: survivor.id, windowId: survivor.windowId }])
+                            .concat(homes.filter(t => t.id !== survivor.id).map(t => ({ id: t.id, windowId: self.windowId })))
+                    });
 
                     if (survivor.id !== self.id) {
                         if (!survivor.pinned) pinTab(survivor.id);

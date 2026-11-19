@@ -353,6 +353,27 @@ chrome.runtime.onStartup.addListener(async () => {
     }
 });
 
+// 导航页被地址栏/链接导航到真实网址后解除固定并从注册表除名，顶部只保留扩展导航页。
+// newtab.js 的 enforce 只能在新标签页打开时清理，这里补上"当场离开当场解除"。
+const HOME_REG_KEY = 'navora_home_tabs';
+const REAL_URL_RE = /^(https?|file|ftp):/i;
+chrome.tabs.onUpdated.addListener(function (tabId, changeInfo, tab) {
+    if (!changeInfo || !changeInfo.url || !REAL_URL_RE.test(changeInfo.url)) return;
+    if (!chrome.storage || !chrome.storage.session) return;
+    chrome.storage.session.get({ [HOME_REG_KEY]: [] }, function (store) {
+        void chrome.runtime.lastError;
+        const list = Array.isArray(store && store[HOME_REG_KEY]) ? store[HOME_REG_KEY] : [];
+        const hit = list.find(function (e) { return e && e.id === tabId; });
+        if (!hit) return;
+        if (tab && tab.pinned) {
+            chrome.tabs.update(tabId, { pinned: false }, function () { void chrome.runtime.lastError; });
+        }
+        chrome.storage.session.set({
+            [HOME_REG_KEY]: list.filter(function (e) { return e && e.id !== tabId; })
+        });
+    });
+});
+
 // 初始化数据同步轮询（使用 chrome.alarms，即使 Service Worker 被挂起也能工作）
 async function initDataSyncPolling() {
     try {
