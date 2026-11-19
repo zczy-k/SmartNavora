@@ -22,26 +22,25 @@ const app = createApp(App);
 app.use(router);
 app.mount('#app');
 
-// 首屏就绪后撤掉 index.html 里的内联启动遮罩；
-// 若被新标签页扩展以 iframe 嵌入，同时通知外层立即收起加载动画（不等图标全部加载完）
+// 被新标签页扩展以 iframe 嵌入时，路由就绪即通知外层收起加载动画（站点自己的启动画面接手）
 router.isReady().then(() => {
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const splash = document.getElementById('boot-splash');
-      if (splash) {
-        splash.classList.add('out');
-        setTimeout(() => splash.remove(), 260);
-      }
-      if (window.parent && window.parent !== window) {
-        try {
-          window.parent.postMessage({ type: 'navora:ready' }, '*');
-        } catch {}
-      }
-    });
-  });
+  if (window.parent && window.parent !== window) {
+    try {
+      window.parent.postMessage({ type: 'navora:ready' }, '*');
+    } catch {}
+  }
 });
-// 路由异常时兜底，避免遮罩卡死
-setTimeout(() => {
+
+// 内联启动画面由站点自己决定何时撤：页面在"卡片已渲染 + 背景图已解码"后派发
+// navora:content-ready；没等到（异常/无事件）则 3 秒兜底，避免遮罩卡死
+let splashRemoved = false;
+function removeSplash() {
+  if (splashRemoved) return;
+  splashRemoved = true;
   const splash = document.getElementById('boot-splash');
-  if (splash) splash.remove();
-}, 4000);
+  if (!splash) return;
+  splash.classList.add('out');
+  setTimeout(() => splash.remove(), 260);
+}
+window.addEventListener('navora:content-ready', removeSplash, { once: true });
+setTimeout(removeSplash, 3000);

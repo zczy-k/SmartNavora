@@ -1424,6 +1424,29 @@ function loadBgSetting() {
   }
 }
 
+// 等当前背景图解码完成再放行首屏（无背景/加载失败/超时直接放行）
+function waitBackgroundReady(timeout = 1500) {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => {
+      if (!done) { done = true; resolve(); }
+    };
+    try {
+      const savedId = parseInt(localStorage.getItem('nav_bg_id') || '0');
+      const bg = presetBackgrounds.find(b => b.id === savedId);
+      if (!bg || !bg.url) { finish(); return; }
+      const timer = setTimeout(finish, timeout);
+      const img = new Image();
+      img.onload = () => { clearTimeout(timer); finish(); };
+      img.onerror = () => { clearTimeout(timer); finish(); };
+      img.src = bg.url;
+      if (img.complete) { clearTimeout(timer); finish(); }
+    } catch {
+      finish();
+    }
+  });
+}
+
 const selectedCardsCount = computed(() => {
   return parsedCards.value.filter(card => card.selected).length;
 });
@@ -1853,7 +1876,6 @@ onMounted(async () => {
   // ========== 第一步：优先从缓存恢复数据（零网络等待，秒开）==========
   const CACHE_KEY = 'nav_data_cache';
   const CARDS_CACHE_KEY = 'nav_cards_cache';
-  const CACHE_TTL = 5 * 60 * 1000;
 
   let cacheUsed = false;
   let cachedCardsMap = {};
@@ -1909,29 +1931,37 @@ onMounted(async () => {
     }
     const cardsCacheStr = localStorage.getItem(CARDS_CACHE_KEY);
     if (cardsCacheStr) {
-      const { data: cardsData, timestamp } = JSON.parse(cardsCacheStr);
-      if (Date.now() - timestamp < CACHE_TTL) {
-        cachedCardsMap = cardsData || {};
-        cardsCache.value = cachedCardsMap;
-        if (menus.value.length > 0) {
-          const firstMenu = menus.value[0];
-          // 缓存卡片按第一个菜单加载，选中菜单同步为第一个，保证首屏一致
-          activeMenu.value = firstMenu;
-          activeSubMenu.value = null;
-          const allCachedCards = [];
-          const firstMenuKey = `${firstMenu.id}_null`;
-          if (cachedCardsMap[firstMenuKey]) allCachedCards.push(...cachedCardsMap[firstMenuKey]);
-          if (firstMenu.subMenus && firstMenu.subMenus.length) {
-            for (const subMenu of firstMenu.subMenus) {
-              const subKey = `${firstMenu.id}_${subMenu.id}`;
-              if (cachedCardsMap[subKey]) allCachedCards.push(...cachedCardsMap[subKey]);
-            }
+      // 缓存不设过期：立即渲染，网络结果回来后覆盖（stale-while-revalidate）
+      const { data: cardsData } = JSON.parse(cardsCacheStr);
+      cachedCardsMap = cardsData || {};
+      cardsCache.value = cachedCardsMap;
+      if (menus.value.length > 0) {
+        const firstMenu = menus.value[0];
+        // 缓存卡片按第一个菜单加载，选中菜单同步为第一个，保证首屏一致
+        activeMenu.value = firstMenu;
+        activeSubMenu.value = null;
+        const allCachedCards = [];
+        const firstMenuKey = `${firstMenu.id}_null`;
+        if (cachedCardsMap[firstMenuKey]) allCachedCards.push(...cachedCardsMap[firstMenuKey]);
+        if (firstMenu.subMenus && firstMenu.subMenus.length) {
+          for (const subMenu of firstMenu.subMenus) {
+            const subKey = `${firstMenu.id}_${subMenu.id}`;
+            if (cachedCardsMap[subKey]) allCachedCards.push(...cachedCardsMap[subKey]);
           }
-          if (allCachedCards.length > 0) cards.value = allCachedCards;
         }
+        if (allCachedCards.length > 0) cards.value = allCachedCards;
       }
     }
   } catch (e) {}
+
+  // 有缓存：渲染完成 + 背景图解码完成即通知外层撤遮罩（不等网络）
+  if (cacheUsed) {
+    nextTick(() => {
+      waitBackgroundReady().then(() => {
+        window.dispatchEvent(new Event('navora:content-ready'));
+      });
+    });
+  }
 
   // 无缓存时立即显示骨架屏，避免空白闪烁
   if (!cacheUsed && frequentCards.value.length === 0) {
@@ -1969,6 +1999,10 @@ onMounted(async () => {
   if (menusRes.status === 'fulfilled') {
     menus.value = menusRes.value.data;
     cacheData.menus = menusRes.value.data;
+    // 立即落盘：loadDeferredHomeData 可能先于菜单返回就写缓存，这里补写保证菜单一定入缓存
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ data: cacheData, timestamp: Date.now() }));
+    } catch (e) {}
     if (menus.value.length) {
       // 无缓存时默认进入第一个菜单，避免新用户首屏停在"常用"空状态
       if (!cacheUsed && !activeMenu.value) {
@@ -1978,6 +2012,15 @@ onMounted(async () => {
       }
       cacheData.cards = cards.value;
     }
+  }
+
+  // 无缓存：菜单和常用卡片回来后（已渲染）再通知外层撤遮罩
+  if (!cacheUsed) {
+    nextTick(() => {
+      waitBackgroundReady().then(() => {
+        window.dispatchEvent(new Event('navora:content-ready'));
+      });
+    });
   }
   
   // 获取并保存数据版本号
@@ -2340,15 +2383,15 @@ async function handleSelectFrequent() {
 
 // 常用卡片缓存
 const FREQUENT_CACHE_KEY = 'nav_frequent_cache';
-const FREQUENT_CACHE_TTL = 5 * 60 * 1000;
 
 // 从缓存加载常用卡片
 function loadFrequentCardsFromCache() {
   try {
     const cached = localStorage.getItem(FREQUENT_CACHE_KEY);
     if (cached) {
-      const { data, timestamp } = JSON.parse(cached);
-      if (Date.now() - timestamp < FREQUENT_CACHE_TTL && Array.isArray(data) && data.length > 0) {
+      const { data } = JSON.parse(cached);
+      // 不设过期：先渲染缓存，loadFrequentCards 的网络结果随后覆盖
+      if (Array.isArray(data) && data.length > 0) {
         frequentCards.value = data;
         return true;
       }
