@@ -1,37 +1,67 @@
 // 单实例 + 置顶：每个窗口只保留一个导航新标签页并固定在标签栏顶部。
 // 新建标签页时若本窗口已有导航页，则激活已有的并关掉这个新的，避免越开越多。
+// 识别同窗口导航页用三重判据：扩展页 URL、各浏览器 newtab 虚拟 URL、session 注册表，
+// 因为 Edge 对被覆盖的新标签页经常回报 edge://newtab/ 而不是扩展地址。
 (function () {
-    if (!chrome.tabs || !chrome.tabs.getCurrent) return;
+    if (!chrome.tabs || !chrome.tabs.getCurrent || !chrome.storage || !chrome.storage.session) return;
     const HOME_URL = chrome.runtime.getURL('newtab.html');
+    const NEWTAB_RE = /^(?:chrome|edge|about|brave|vivaldi|opera|yandex):\/\/newtab\/?(?:$|[?#])/i;
+    const REG_KEY = 'navora_home_tabs';
 
-    function isHome(tab) {
-        return !!(tab && tab.url && tab.url.split('#')[0].split('?')[0].startsWith(HOME_URL));
+    function looksLikeHome(tab) {
+        const u = (tab && (tab.url || tab.pendingUrl)) || '';
+        return u.indexOf(HOME_URL) === 0 || NEWTAB_RE.test(u);
+    }
+
+    function pinTab(id) {
+        chrome.tabs.update(id, { pinned: true }, function () { void chrome.runtime.lastError; });
+    }
+
+    // 关不掉就退而求其次解除固定，至少不让图标堆在顶部
+    function closeTab(id) {
+        chrome.tabs.remove(id, function () {
+            if (chrome.runtime.lastError) {
+                chrome.tabs.update(id, { pinned: false }, function () { void chrome.runtime.lastError; });
+            }
+        });
     }
 
     function enforce() {
         chrome.tabs.getCurrent(function (self) {
             if (!self || typeof self.id !== 'number') return;
             chrome.tabs.query({ windowId: self.windowId }, function (tabs) {
-                const homes = (tabs || []).filter(isHome);
-                if (!homes.some(t => t.id === self.id)) homes.push(self);
-                // 幸存者：已固定的优先，其次标签 id 最小（最早创建），保证所有页面算出同一个结果
-                homes.sort((a, b) => ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || (a.id - b.id));
-                const survivor = homes[0];
+                tabs = tabs || [];
+                const alive = new Set(tabs.map(t => t.id));
 
-                if (survivor.id !== self.id) {
-                    if (!survivor.pinned) {
-                        chrome.tabs.update(survivor.id, { pinned: true }, function () { void chrome.runtime.lastError; });
+                chrome.storage.session.get({ [REG_KEY]: [] }, function (store) {
+                    let registry = (store[REG_KEY] || [])
+                        .filter(e => e && alive.has(e.id) && e.windowId === self.windowId);
+                    if (!registry.some(e => e.id === self.id)) {
+                        registry.push({ id: self.id, windowId: self.windowId });
                     }
-                    chrome.tabs.update(survivor.id, { active: true }, function () { void chrome.runtime.lastError; });
-                    chrome.tabs.remove(self.id, function () { void chrome.runtime.lastError; });
-                    return;
-                }
+                    const regIds = new Set(registry.map(e => e.id));
+                    // 注册表里的标签一旦被导航到真实网址就不再算导航页，防止把普通页面当导航页关掉
+                    const isNavigatedAway = t => /^(https?|file|ftp):/i.test((t.url || t.pendingUrl) || '');
 
-                if (!self.pinned) {
-                    chrome.tabs.update(self.id, { pinned: true }, function () { void chrome.runtime.lastError; });
-                }
-                homes.slice(1).forEach(function (t) {
-                    chrome.tabs.remove(t.id, function () { void chrome.runtime.lastError; });
+                    const homes = tabs.filter(t =>
+                        looksLikeHome(t) || (regIds.has(t.id) && !isNavigatedAway(t))
+                    );
+                    if (!homes.some(t => t.id === self.id)) homes.push(self);
+                    // 幸存者：已固定的优先，其次标签 id 最小（最早创建），保证所有页面算出同一个结果
+                    homes.sort((a, b) => ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || (a.id - b.id));
+                    const survivor = homes[0];
+
+                    chrome.storage.session.set({ [REG_KEY]: [{ id: survivor.id, windowId: survivor.windowId }] });
+
+                    if (survivor.id !== self.id) {
+                        if (!survivor.pinned) pinTab(survivor.id);
+                        chrome.tabs.update(survivor.id, { active: true }, function () { void chrome.runtime.lastError; });
+                        closeTab(self.id);
+                        return;
+                    }
+
+                    if (!self.pinned) pinTab(self.id);
+                    homes.slice(1).forEach(function (t) { closeTab(t.id); });
                 });
             });
         });
