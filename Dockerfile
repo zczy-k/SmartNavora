@@ -33,7 +33,6 @@ COPY routes/ ./routes/
 COPY middleware/ ./middleware/
 COPY utils/ ./utils/
 COPY scripts/ ./scripts/
-COPY config/ ./defaults/config/
 
 COPY --from=frontend-builder /app/dist ./web/dist
 
