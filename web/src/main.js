@@ -44,3 +44,10 @@ function removeSplash() {
 }
 window.addEventListener('navora:content-ready', removeSplash, { once: true });
 setTimeout(removeSplash, 3000);
+
+// 旧 HTML 引用的 chunk 被清理后会加载失败：自动重载一次拿新入口，避免白屏
+window.addEventListener('vite:preloadError', () => {
+  if (sessionStorage.getItem('nav_chunk_retry')) return;
+  sessionStorage.setItem('nav_chunk_retry', '1');
+  location.reload();
+});

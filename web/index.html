@@ -71,6 +71,36 @@
         100% { transform: translateX(340%); }
       }
     </style>
+    <script>
+      // 首屏渲染完成后闲时校验部署版本：HTML 被静态托管无缓存头时，浏览器启发式缓存可能留住旧 HTML，
+      // 这里比对服务端构建戳，落后则换 URL 静默刷一次（每浏览器每次部署只刷一次）
+      (function () {
+        var meta = document.querySelector('meta[name="build-id"]');
+        if (!meta) return;
+        var stamp = meta.getAttribute('content');
+        var done = false;
+        function probe() {
+          if (done) return;
+          done = true;
+          fetch('/api/data-version', { cache: 'no-store' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d.build || d.build === stamp) return;
+              try {
+                if (localStorage.getItem('nav_build_seen') === d.build) return;
+                localStorage.setItem('nav_build_seen', d.build);
+              } catch (e) { return; }
+              location.replace('/?_b=' + encodeURIComponent(d.build));
+            })
+            .catch(function () {});
+        }
+        window.addEventListener('navora:content-ready', function () {
+          if ('requestIdleCallback' in window) requestIdleCallback(probe, { timeout: 3000 });
+          else setTimeout(probe, 2000);
+        }, { once: true });
+        setTimeout(probe, 8000);
+      })();
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

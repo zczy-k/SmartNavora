@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
   <head>
+    <meta name="build-id" content="mwn0ydeo" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=0">
     <title>CNI新标签页</title>
@@ -17,7 +18,7 @@
     <!-- 资源预加载提示 -->
     <link rel="preconnect" href="https://main.ssss.nyc.mn" crossorigin>
     <link rel="dns-prefetch" href="https://img.icons8.com">
-    <script type="module" crossorigin src="/assets/index-Pe0WwGAT.js"></script>
+    <script type="module" crossorigin src="/assets/index-CZIKPQdP.js"></script>
   </head>
   <body style="margin:0;padding:0;background:#1a1a1a;">
     <div id="app" style="min-height:100vh;background:#1a1a1a;"></div>
@@ -71,6 +72,36 @@
         0% { transform: translateX(-110%); }
         100% { transform: translateX(340%); }
       }
-    </style>
+    </style>
+    <script>
+      // 首屏渲染完成后闲时校验部署版本：HTML 被静态托管无缓存头时，浏览器启发式缓存可能留住旧 HTML，
+      // 这里比对服务端构建戳，落后则换 URL 静默刷一次（每浏览器每次部署只刷一次）
+      (function () {
+        var meta = document.querySelector('meta[name="build-id"]');
+        if (!meta) return;
+        var stamp = meta.getAttribute('content');
+        var done = false;
+        function probe() {
+          if (done) return;
+          done = true;
+          fetch('/api/data-version', { cache: 'no-store' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+              if (!d.build || d.build === stamp) return;
+              try {
+                if (localStorage.getItem('nav_build_seen') === d.build) return;
+                localStorage.setItem('nav_build_seen', d.build);
+              } catch (e) { return; }
+              location.replace('/?_b=' + encodeURIComponent(d.build));
+            })
+            .catch(function () {});
+        }
+        window.addEventListener('navora:content-ready', function () {
+          if ('requestIdleCallback' in window) requestIdleCallback(probe, { timeout: 3000 });
+          else setTimeout(probe, 2000);
+        }, { once: true });
+        setTimeout(probe, 8000);
+      })();
+    </script>
   </body>
 </html>

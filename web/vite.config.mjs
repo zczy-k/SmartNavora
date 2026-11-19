@@ -29,6 +29,16 @@ export default defineConfig({
   plugins: [
     vue(),
     {
+      // 每次构建打一个新戳，前端用它比对服务端部署版本（HTML 无缓存头时的自愈依据）
+      name: 'inject-build-id',
+      transformIndexHtml(html) {
+        return html.replace(
+          '<head>',
+          `<head>\n    <meta name="build-id" content="${Date.now().toString(36)}" />`
+        );
+      }
+    },
+    {
       name: 'copy-to-public',
       closeBundle() {
         const distDir = resolve(__dirname, 'dist');

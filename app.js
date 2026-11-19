@@ -311,6 +311,18 @@ try {
   }
 } catch (e) {}
 
+// 构建戳：前端据它判断手里的 HTML 是否落后于当前部署（HTML 被 nginx 静态托管时拿不到缓存头兜底）
+let buildIdCache = null;
+function getBuildId() {
+  if (buildIdCache) return buildIdCache;
+  try {
+    const html = fs.readFileSync(path.join(staticDir, 'index.html'), 'utf8');
+    const m = html.match(/name="build-id"\s+content="([^"]+)"/);
+    if (m) buildIdCache = m[1];
+  } catch {}
+  return buildIdCache;
+}
+
 app.use(express.static(staticDir, {
   maxAge: '1d',
   etag: true,
@@ -372,9 +384,9 @@ async function sendDataVersion(req, res) {
 
   try {
     const version = await db.getDataVersion();
-    res.json({ version });
+    res.json({ version, build: getBuildId() });
   } catch (error) {
-    res.json({ version: 1 });
+    res.json({ version: 1, build: getBuildId() });
   }
 }
 
