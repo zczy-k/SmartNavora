@@ -129,6 +129,43 @@ verify_cache_headers() {
         yellow "        全局浏览器缓存 TTL 保持「不缓存」，HTML 才不会拿到一年 max-age"
         yellow "        注意: 缓存配置的差异化 JSON 只有节点缓存字段，浏览器 TTL 必须走规则引擎"
     fi
+
+    # HTML 边缘缓存：新标签页每次打开都取 HTML，必须命中 EdgeOne 节点缓存才不慢
+    echo ""
+    yellow "  [校验] HTML 边缘缓存: https://${CURRENT_DOMAIN}/"
+    local hh eo_html
+    curl -sI --max-time 10 "https://${CURRENT_DOMAIN}/" >/dev/null 2>&1 || true
+    sleep 1
+    hh=$(curl -sI --max-time 10 "https://${CURRENT_DOMAIN}/" 2>/dev/null | tr -d '\r' || true)
+    eo_html=$(printf '%s\n' "$hh" | awk 'tolower($1)=="eo-cache-status:"{print $2}')
+    if [ "$eo_html" = "HIT" ]; then
+        green "      ✔ HTML 边缘缓存命中 (EO-Cache-Status: HIT)"
+    elif [ -n "$eo_html" ]; then
+        yellow "      ! HTML 边缘缓存: ${eo_html}（每次新开标签页都会回源，较慢）"
+        yellow "        修复: EdgeOne → 站点加速 → 缓存配置 → 差异化 JSON 增加子规则"
+        yellow '        IF 路径 正则匹配 ^/(index\.html)?$|^/admin/?$ → 自定义 300 秒'
+        yellow "        （构建已保留近期旧 assets，旧 HTML 不会 404；部署后最多 5 分钟切新）"
+    else
+        yellow "      - 未检测到 EO-Cache-Status（未接入 CDN 时忽略）"
+    fi
+
+    # 图标边缘缓存：首页一次加载约 60 张 /icons/*，每条都要边缘命中才不拖慢新标签页
+    echo ""
+    yellow "  [校验] 图标边缘缓存: https://${CURRENT_DOMAIN}/icons/icon-192x192.png"
+    local hi eo_icon
+    curl -sI --max-time 10 "https://${CURRENT_DOMAIN}/icons/icon-192x192.png" >/dev/null 2>&1 || true
+    sleep 1
+    hi=$(curl -sI --max-time 10 "https://${CURRENT_DOMAIN}/icons/icon-192x192.png" 2>/dev/null | tr -d '\r' || true)
+    eo_icon=$(printf '%s\n' "$hi" | awk 'tolower($1)=="eo-cache-status:"{print $2}')
+    if [ "$eo_icon" = "HIT" ]; then
+        green "      ✔ 图标边缘缓存命中 (EO-Cache-Status: HIT)"
+    elif [ -n "$eo_icon" ]; then
+        yellow "      ! 图标边缘缓存: ${eo_icon}（每张卡片图标都会被回源取一次）"
+        yellow '        修复: 同一份缓存配置差异化 JSON 增加子规则 IF 路径 正则 ^/icons/.* → 自定义 7 天'
+        yellow "        浏览器侧建议同时在规则引擎给 ^/icons/.* 设浏览器缓存 TTL 7 天"
+    else
+        yellow "      - 未检测到 EO-Cache-Status（未接入 CDN 时忽略）"
+    fi
 }
 
 # 执行部署（install/update 共用核心流程）
@@ -236,6 +273,8 @@ EOF
     devil www restart "${CURRENT_DOMAIN}" > /dev/null 2>&1
 
     verify_cache_headers
+
+    yellow "  提示: 若已开启 HTML 边缘缓存，请到 EdgeOne 控制台「清除缓存」清一次 HTML，部署立即生效"
 
     echo ""
     if [ "$MODE" = "update" ]; then

@@ -36,11 +36,23 @@ export default defineConfig({
         const publicAssetsDir = resolve(publicDir, 'assets');
         
         try {
-          // 1. 清理旧的 assets 文件（只保留新构建的）
+          // 1. 只清理 7 天前的旧 assets
+          // 不整体清空：EdgeOne 会给 HTML 做短时边缘缓存，旧 HTML 可能仍引用旧 hash 的 chunk，
+          // 立刻删文件会让那部分用户吃到 404；保留 7 天远大于任何缓存 TTL。
           if (existsSync(publicAssetsDir)) {
-            console.log('🧹 正在清理旧的构建文件...');
-            rmSync(publicAssetsDir, { recursive: true, force: true });
-            console.log('✅ 旧文件已清理');
+            const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            let pruned = 0;
+            for (const name of readdirSync(publicAssetsDir)) {
+              const filePath = join(publicAssetsDir, name);
+              try {
+                const stats = statSync(filePath);
+                if (stats.isFile() && stats.mtimeMs < cutoff) {
+                  rmSync(filePath, { force: true });
+                  pruned++;
+                }
+              } catch {}
+            }
+            console.log(`🧹 已清理 ${pruned} 个 7 天前的旧构建文件（保留近期文件供边缘缓存命中）`);
           }
           
           // 2. 然后将整个 dist 目录复制到 public 目录
