@@ -1,127 +1,73 @@
 # SmartNavora 浏览器扩展
 
-用于接管新标签页、整理浏览器书签，并将网页或书签快速导入导航站。
+接管新标签页、右键一键收藏、整理浏览器书签，与自建的 SmartNavora 导航站配合使用。
 
-## 功能特点
+## 功能
 
-✅ **新标签页接管** - 打开新标签页直接进入你的导航站  
-✅ **右键快速添加** - 右键即可把当前网页或链接添加到导航页  
-✅ **书签整理导入** - 支持浏览器书签搜索、整理和导入导航站  
-✅ **自定义地址** - 支持任意导航站地址  
-✅ **跨设备同步** - 通过 Chrome 账号同步扩展设置  
+- **新标签页接管** — 打开新标签页直接进入你的导航站
+- **每窗口单实例置顶** — 每个浏览器窗口有且只有一个导航页，并固定在标签栏顶部；重复新建自动复用，不会越开越多
+- **地址栏导航自动解钉** — 在导航页地址栏搜索或跳转到其它网站时，该页自动解除固定（内容不会丢失），顶部始终只保留导航页
+- **右键快速添加** — 右键即可把当前网页或链接添加到导航页，支持选择分类
+- **书签管理器** — 搜索、整理浏览器书签并批量导入导航站
+- **自定义地址** — 支持任意导航站地址，设置随浏览器账号同步
 
-## 安装方法
+## 安装
 
-### 方法1：开发者模式安装（推荐）
+### Chrome / Edge（开发者模式）
 
-1. 打开 Chrome/Edge 浏览器
-2. 访问 `chrome://extensions/`（Edge 用户访问 `edge://extensions/`）
-3. 开启右上角的"开发者模式"
-4. 点击"加载已解压的扩展程序"
-5. 选择 `browser-extension` 文件夹
-6. 完成安装！
+1. 从 [Releases](https://github.com/zczy-k/SmartNavora/releases) 下载 `smartnavora-extension-v*.zip` 并解压（或直接使用仓库中的 `browser-extension/` 目录）
+2. 打开 `chrome://extensions/`（Edge 为 `edge://extensions/`），开启「开发者模式」
+3. 点击「加载已解压的扩展程序」，选择 `browser-extension` 文件夹
 
-### 方法2：打包安装
+### Firefox
 
-1. 在 `chrome://extensions/` 页面点击"打包扩展程序"
-2. 选择 `browser-extension` 文件夹
-3. 生成 `.crx` 文件
-4. 将 `.crx` 文件拖入浏览器安装
+1. 打开 `about:debugging#/runtime/this-firefox`
+2. 点击「临时载入附加组件」，选择 `browser-extension/manifest.json`
 
-## 使用说明
+> Firefox 需 127 及以上版本（manifest 中的 `gecko.strict_min_version`）。
 
-### 首次使用
+## 使用
 
-1. 安装扩展后，打开新标签页
-2. 输入你的导航站地址（例如：`https://your-domain.com`）
-3. 点击"保存并开始使用"
-4. 完成！之后每次打开新标签页都会自动跳转
-
-### 修改设置
-
-1. 右键点击扩展图标
-2. 选择"选项"或"设置"
-3. 修改导航站地址
-4. 点击"保存设置"
-
-或者：
-- 访问 `chrome://extensions/`
-- 找到"SmartNavora - 新标签页"
-- 点击"详情"
-- 点击"扩展程序选项"
-
-### 重置设置
-
-在设置页面点击"重置"按钮，即可清除保存的地址。
+1. 首次打开新标签页，输入导航站地址（如 `https://your-domain.com`），保存后即开始使用
+2. 工具栏图标 → 「设置地址」可随时修改；「管理后台」直达站点的 `/admin`
+3. 工具栏图标 → 「书签管理器」可整理/导入浏览器书签
+4. 任意网页右键 → 「添加到导航页」
 
 ## 支持的浏览器
 
-✅ Google Chrome 88+  
-✅ Microsoft Edge 88+  
-✅ Brave Browser  
-✅ 其他基于 Chromium 的浏览器  
+- Google Chrome / Microsoft Edge 等基于 Chromium 的浏览器（MV3）
+- Firefox 127+
 
 ## 常见问题
 
-### Q: 为什么安装后还是显示默认新标签页？
-A: 请检查扩展是否启用，以及是否已输入并保存导航站地址。
+**安装后还是显示默认新标签页？**
+检查扩展是否启用，以及是否已保存导航站地址。
 
-### Q: 可以使用本地部署的导航站吗？
-A: 可以！只要输入完整的访问地址即可（如 `http://localhost:3000`）。
+**可以使用本地部署的导航站吗？**
+可以，填入完整地址即可，例如 `http://localhost:3000`。
 
-### Q: 设置会跨设备同步吗？
-A: 会的，只要登录了 Chrome/Edge 账号并开启同步功能。
+**设置会跨设备同步吗？**
+会。扩展使用 `chrome.storage.sync`，登录浏览器账号并开启同步后自动同步。
 
-### Q: 扩展会收集我的数据吗？
-A: 不会！扩展只在浏览器本地存储你输入的导航站地址，不发送任何数据到外部服务器。
-
-## 技术细节
-
-- **Manifest 版本**: V3
-- **权限**: `storage`、`tabs`、`bookmarks`、`history`、`contextMenus`、`scripting` 等（用于右键添加和书签管理）
-- **体积**: 以仓库实际构建结果为准
-- **开源**: MIT License
+**扩展会收集我的数据吗？**
+不会。扩展只在浏览器本地保存你填写的导航站地址，数据请求只发向你自己的导航站。
 
 ## 文件结构
 
 ```
 browser-extension/
-├── manifest.json      # 扩展配置文件
-├── newtab.html        # 新标签页（首次配置页面）
-├── newtab.js          # 新标签页逻辑
-├── bookmarks.html     # 书签管理器
-├── bookmarks.js       # 书签管理与导入逻辑
-├── options.html       # 设置页面
-├── options.js         # 设置页面逻辑
-├── popup.html         # 扩展弹窗
-├── popup.js           # 扩展弹窗逻辑
-├── background.js      # 后台脚本（右键菜单、同步等）
+├── manifest.json      # 扩展配置（MV3）
+├── newtab.html        # 新标签页（导航站 iframe + 首次配置）
+├── newtab.js          # 新标签页逻辑（单实例置顶、解钉、首次配置）
+├── background.js      # 后台脚本（右键菜单、AI 生成、备份同步、解钉监听）
 ├── content.js         # 页面内快捷添加弹窗
+├── popup.html/.js     # 工具栏弹窗
+├── options.html/.js   # 扩展选项页
+├── bookmarks.html/.js # 书签管理器
 ├── icons/             # 扩展图标
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
-└── README.md          # 本文件
+└── README.md
 ```
-
-## 更新日志
-
-### v1.0.1 (2025-01-21)
-- 🔧 优化扩展性能和稳定性
-- 🐛 修复部分浏览器兼容性问题
-- ✨ 改进用户界面体验
-- 🔒 增强安全性和隐私保护
-
-### v1.0.0 (2025-01-31)
-- 🎉 首次发布
-- ✅ 支持自定义导航站地址
-- ✅ 首次使用引导
-- ✅ 设置页面
 
 ## 许可证
 
-MIT License
-
-## 联系方式
-
-项目地址: https://github.com/zczy-k/SmartNavora
+[Apache License 2.0](../LICENSE)。完整更新日志见 [Releases](https://github.com/zczy-k/SmartNavora/releases)。

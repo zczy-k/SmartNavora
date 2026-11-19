@@ -1,4 +1,4 @@
-Con-Nav-Item
+SmartNavora
 Copyright 2025 zczy-k
 
 This project is based on and derived from nav-item:
@@ -39,18 +39,17 @@ WHAT YOU MUST DO:
 ATTRIBUTION:
 
 Original Project: nav-item by eooce (https://github.com/eooce/nav-item)
-Enhanced Version: Con-Nav-Item by zczy-k (https://github.com/zczy-k/Con-Nav-Item)
+Current Project: SmartNavora by zczy-k (https://github.com/zczy-k/SmartNavora)
 
-New features added by zczy-k include:
-- Browser extension with bookmark management
-- Cloud bookmark backup and sync system
-- WebDAV cloud storage integration
-- Quick access panel
-- Bookmark tag system
-- Smart bookmark sorting
-- Duplicate detection
-- Batch operations
-- And many other enhancements
+Changes from the original project include:
+- Rewritten frontend (Vue 3 + Vite) and REST API (Express)
+- AI-assisted card generation with multi-provider adapters
+- Browser extension: single-instance pinned new-tab, right-click save,
+  bookmark manager and import
+- Local icon fetching service with disk cache and letter fallback
+- SSE real-time data sync, layered browser caching and build-stamp self-heal
+- Scheduled backups with WebDAV cloud sync, operation audit log sharding
+- Docker multi-arch images, Linux and Serv00 deployment scripts
 
 ================================================================================
 
