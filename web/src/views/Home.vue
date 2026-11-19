@@ -98,7 +98,7 @@
           <button v-if="searchQuery" class="clear-btn" @click="clearSearch" aria-label="清空">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
           </button>
-          <button @click="handleSearch" class="search-btn" title="用 {{ selectedEngine?.label || '搜索引擎' }} 打开外网搜索（回车同效）">
+          <button @click="handleSearch" class="search-btn" :title="`用 ${selectedEngine?.label || '搜索引擎'} 打开外网搜索（回车同效）`">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -691,38 +691,16 @@
     <FriendLinksModal :show="showFriendLinks" :friends="friendLinks" @close="showFriendLinks = false" />
     
     <!-- 菜单编辑弹窗 -->
-    <div v-if="showMenuModal" class="modal-overlay">
-      <div class="modal-content menu-modal" @click.stop>
-        <div class="modal-header">
-          <h3>{{ menuModalMode === 'add' ? '添加' : '编辑' }}{{ menuModalType === 'menu' ? '菜单' : '子菜单' }}</h3>
-          <button @click="showMenuModal = false" class="close-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 6L6 18M6 6l12 12"></path>
-            </svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>名称</label>
-            <input 
-              v-model="editingMenuData.name" 
-              type="text" 
-              :placeholder="menuModalType === 'menu' ? '请输入菜单名称' : '请输入子菜单名称'"
-              class="batch-input"
-              @keyup.enter="saveMenuModal"
-              maxlength="20"
-            />
-          </div>
-          <div v-if="menuModalMode === 'add'" class="menu-insert-hint">{{ menuInsertHint }}</div>
-          <div class="batch-actions" style="margin-top: 20px;">
-            <button @click="showMenuModal = false" class="btn btn-cancel">取消</button>
-            <button @click="saveMenuModal" class="btn btn-primary" :disabled="menuModalLoading">
-              {{ menuModalLoading ? '保存中...' : '保存' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <MenuEditModal
+      v-if="showMenuModal"
+      :mode="menuModalMode"
+      :type="menuModalType"
+      :data="editingMenuData"
+      :hint="menuInsertHint"
+      :loading="menuModalLoading"
+      @save="saveMenuModal"
+      @close="showMenuModal = false"
+    />
     
     <!-- 卡片编辑弹窗 -->
     <div v-if="showEditCardModal" class="modal-overlay">
@@ -839,64 +817,24 @@
     </div>
 
     <!-- 快速添加卡片弹窗 -->
-    <div v-if="showQuickAddModal" class="modal-overlay" @click="showQuickAddModal = false">
-      <div class="modal-content quick-add-modal" @click.stop>
-        <div class="modal-header">
-          <h3>添加卡片</h3>
-          <button class="close-btn" @click="showQuickAddModal = false">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label>网址 <span style="color: #ef4444;">*</span></label>
-            <input v-model="quickAddForm.url" placeholder="https://example.com" class="batch-input" @keyup.enter="saveQuickAdd" />
-          </div>
-          <div class="form-group">
-            <label>标题</label>
-            <input v-model="quickAddForm.title" placeholder="留空则自动获取" class="batch-input" />
-          </div>
-          <div class="form-group">
-            <label>描述</label>
-            <textarea v-model="quickAddForm.desc" placeholder="留空则 AI 自动生成" class="batch-textarea" rows="2"></textarea>
-          </div>
-          <div class="form-group">
-            <label>分组 <span class="field-hint">（可选，用于在子菜单内分类）</span></label>
-            <input v-model="quickAddForm.section" placeholder="例如：AI 工具、开发环境" class="batch-input" list="section-datalist" />
-          </div>
-          <p v-if="quickAddError" class="batch-error">{{ quickAddError }}</p>
-          <div class="batch-actions" style="margin-top: 16px;">
-            <button @click="showQuickAddModal = false" class="btn btn-cancel">取消</button>
-            <button @click="saveQuickAdd" class="btn btn-primary" :disabled="quickAddLoading">
-              {{ quickAddLoading ? '添加中...' : '添加' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <QuickAddModal
+      v-if="showQuickAddModal"
+      :form="quickAddForm"
+      :error="quickAddError"
+      :loading="quickAddLoading"
+      @save="saveQuickAdd"
+      @close="showQuickAddModal = false"
+    />
 
     <!-- 批量设置分组弹窗 -->
-    <div v-if="showBatchSectionModal" class="modal-overlay" @click="showBatchSectionModal = false">
-      <div class="modal-content quick-add-modal" @click.stop>
-        <div class="modal-header">
-          <h3>批量设置分组</h3>
-          <button class="close-btn" @click="showBatchSectionModal = false">×</button>
-        </div>
-        <div class="modal-body">
-          <p style="color: rgba(255,255,255,0.6); font-size: 13px; margin-bottom: 12px;">
-            为已选的 <strong style="color: rgba(255,255,255,0.9);">{{ selectedCards.length }}</strong> 张卡片设置分组
-          </p>
-          <div class="form-group">
-            <label>分组名称</label>
-            <input v-model="batchSectionValue" placeholder="输入分组名，留空则清除分组" class="batch-input" list="section-datalist" @keyup.enter="applyBatchSectionToSelected" />
-          </div>
-          <div class="batch-actions" style="margin-top: 16px;">
-            <button @click="showBatchSectionModal = false" class="btn btn-cancel">取消</button>
-            <button @click="applyBatchSectionToSelected" class="btn btn-primary" :disabled="batchSectionLoading">
-              {{ batchSectionLoading ? '设置中...' : '应用' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <BatchSectionModal
+      v-if="showBatchSectionModal"
+      :count="selectedCards.length"
+      v-model:value="batchSectionValue"
+      :loading="batchSectionLoading"
+      @apply="applyBatchSectionToSelected"
+      @close="showBatchSectionModal = false"
+    />
 
     <!-- 添加搜索引擎弹窗 -->
     <div v-if="showAddEngineModal" class="modal-overlay">
@@ -994,36 +932,15 @@
     </transition>
 
     <!-- 云端版本落后提醒弹窗 -->
-    <div v-if="showBackupSyncModal" class="modal-overlay" @click.self="showBackupSyncModal = false">
-      <div class="modal-content" @click.stop style="max-width: 420px;">
-        <div class="modal-header">
-          <h3>同步云备份</h3>
-          <button @click="showBackupSyncModal = false" class="close-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <p style="margin-bottom: 15px; color: #666;">本地数据版本比云端更新，请验证管理员密码后同步备份到云端。</p>
-          <div class="password-input-wrapper">
-            <input
-              v-model="backupSyncPassword"
-              type="password"
-              placeholder="请输入管理员密码"
-              class="batch-input password-input"
-              @keyup.enter="handleBackupSync"
-            />
-          </div>
-          <p v-if="backupSyncError" class="batch-error">{{ backupSyncError }}</p>
-          <p v-if="backupSyncSuccess" class="batch-success">{{ backupSyncSuccess }}</p>
-          <div class="batch-actions" style="margin-top: 20px;">
-            <button @click="showBackupSyncModal = false" class="btn btn-cancel">取消</button>
-            <button @click="handleBackupSync" class="btn btn-primary" :disabled="backupSyncLoading || !backupSyncPassword">
-              {{ backupSyncLoading ? '同步中...' : '同步备份到云端' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <BackupSyncModal
+      v-if="showBackupSyncModal"
+      v-model:password="backupSyncPassword"
+      :error="backupSyncError"
+      :success="backupSyncSuccess"
+      :loading="backupSyncLoading"
+      @sync="handleBackupSync"
+      @close="showBackupSyncModal = false"
+    />
   </div>
 
   <!-- 分组自动补全 -->
@@ -1047,6 +964,10 @@ import MenuBar from '../components/MenuBar.vue';
 import MobileDrawer from '../components/MobileDrawer.vue';
 const FriendLinksModal = defineAsyncComponent(() => import('../components/FriendLinksModal.vue'));
 const ProgressModal = defineAsyncComponent(() => import('../components/ProgressModal.vue'));
+const MenuEditModal = defineAsyncComponent(() => import('../components/MenuEditModal.vue'));
+const QuickAddModal = defineAsyncComponent(() => import('../components/QuickAddModal.vue'));
+const BatchSectionModal = defineAsyncComponent(() => import('../components/BatchSectionModal.vue'));
+const BackupSyncModal = defineAsyncComponent(() => import('../components/BackupSyncModal.vue'));
 import { filterCardsWithPinyin } from '../utils/pinyin';
 import { getDuplicateMatch, extractPathname, formatUrlPreview, isMultiPathDomainAllowed } from '../utils/urlNormalizer';
 const importCardGrid = () => import('../components/CardGrid.vue');

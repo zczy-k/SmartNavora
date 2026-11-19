@@ -1,0 +1,408 @@
+/* 弹窗与表单原语：供 Home 及拆分出的弹窗组件共用
+   数值与 src/styles/home.css 保持一致（以 home.css 中后出现的定义为准） */
+
+/* 移动端（768 以下）——原 home.css 中该块位于基础样式之前，仅补基础样式未覆盖的属性 */
+@media (max-width: 768px) {
+  .modal-overlay {
+    padding: 16px;
+    align-items: flex-start;
+    padding-top: 10vh;
+  }
+
+  .modal-content {
+    max-width: 92%;
+    max-height: 75vh;
+    border-radius: 14px;
+  }
+
+  .modal-content.menu-modal {
+    max-width: 85%;
+  }
+
+  .modal-header {
+    padding: 14px 16px;
+  }
+
+  .modal-header h3 {
+    font-size: 16px;
+  }
+
+  .modal-body {
+    padding: 16px;
+  }
+
+  .batch-textarea {
+    min-height: 120px;
+    font-size: 14px;
+  }
+
+  .batch-actions {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .batch-actions .btn {
+    flex: 1;
+    min-width: 100px;
+  }
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10002;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modal-overlay.auth-modal-overlay {
+  z-index: 10010;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: modalSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal-content.menu-modal {
+  max-width: 360px;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #1890ff 0%, #69c0ff 100%);
+  color: white;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
+}
+
+.close-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 表单 */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-group label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.form-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #9ca3af;
+}
+
+.field-hint {
+  font-weight: 400;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.menu-insert-hint {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.08) 0%, rgba(64, 169, 255, 0.05) 100%);
+  border: 1px solid rgba(24, 144, 255, 0.15);
+  color: #2563eb;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.batch-input,
+.batch-textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 16px;
+  box-sizing: border-box;
+}
+
+.batch-textarea {
+  resize: vertical;
+  font-family: 'Courier New', monospace;
+  line-height: 1.6;
+}
+
+.batch-input:focus,
+.batch-textarea:focus {
+  outline: none;
+  border-color: #1890ff;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.batch-error {
+  color: #dc2626;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.batch-success {
+  color: #16a34a;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #1890ff 0%, #40a9ff 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-cancel {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.btn-cancel:hover {
+  background: #e5e7eb;
+}
+
+/* 密码输入 */
+.password-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.password-input {
+  width: 100%;
+  padding-right: 45px !important;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  transition: color 0.2s;
+}
+
+.password-toggle-btn:hover {
+  color: #1890ff;
+}
+
+/* 小屏手机（480 以下） */
+@media (max-width: 480px) {
+  .modal-overlay {
+    padding: 12px;
+    padding-top: 8vh;
+  }
+
+  .modal-content {
+    max-width: 94%;
+    max-height: 72vh;
+    border-radius: 12px;
+  }
+
+  .modal-header {
+    padding: 12px 14px;
+  }
+
+  .modal-header h3 {
+    font-size: 15px;
+  }
+
+  .modal-body {
+    padding: 14px;
+  }
+
+  .close-btn {
+    padding: 5px;
+  }
+
+  .close-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .batch-textarea {
+    min-height: 100px;
+    font-size: 13px;
+  }
+
+  .batch-input {
+    padding: 10px;
+    font-size: 14px;
+  }
+
+  .form-group label {
+    font-size: 13px;
+  }
+
+  .form-group input,
+  .form-group textarea {
+    font-size: 14px;
+    padding: 10px;
+  }
+}
+
+/* 平板（769 - 1024） */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .modal-content {
+    max-width: 520px;
+    max-height: 80vh;
+  }
+}
+
+/* 超小屏（380 以下） */
+@media (max-width: 380px) {
+  .modal-overlay {
+    padding: 10px;
+    padding-top: 6vh;
+  }
+
+  .modal-content {
+    max-width: 96%;
+    max-height: 70vh;
+    border-radius: 10px;
+  }
+
+  .modal-header {
+    padding: 10px 12px;
+  }
+
+  .modal-header h3 {
+    font-size: 14px;
+  }
+
+  .modal-body {
+    padding: 12px;
+  }
+
+  .btn {
+    padding: 8px 14px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+
+  .batch-actions {
+    gap: 8px;
+  }
+}
+
+/* 触摸设备 */
+@media (hover: none) and (pointer: coarse) {
+  .btn,
+  .close-btn {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .btn:active,
+  .close-btn:active {
+    transform: scale(0.96);
+    transition: transform 0.1s ease;
+  }
+
+  .modal-overlay {
+    -webkit-overflow-scrolling: touch;
+  }
+}
