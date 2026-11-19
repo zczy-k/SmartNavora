@@ -22,9 +22,15 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+concurrency:
+  group: docker-image-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    # QEMU 下 arm64 构建偶发挂死，超时强制终止，避免僵尸构建堆积
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
