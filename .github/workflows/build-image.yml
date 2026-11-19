@@ -69,3 +69,40 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Prune old image versions
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          node <<'EOF'
+          const owner = process.env.OWNER;
+          const repo = 'smartnavora';
+          const headers = { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json' };
+          (async () => {
+            let versions = [];
+            for (let p = 1; p <= 10; p++) {
+              const r = await fetch(`https://api.github.com/users/${owner}/packages/container/${repo}/versions?per_page=100&page=${p}`, { headers });
+              const j = await r.json();
+              if (!Array.isArray(j) || j.length === 0) break;
+              versions.push(...j);
+              if (j.length < 100) break;
+            }
+            const tagged = versions.find(v => (((v.metadata || {}).container || {}).tags || []).includes('latest'));
+            if (!tagged) { console.log('No version tagged latest, skip pruning.'); return; }
+            // 保留最新一次构建的全部 manifest（索引 + 各架构子清单），其余历史版本删除
+            const t = new Date(tagged.created_at).getTime();
+            const keep = new Set(versions
+              .filter(v => Math.abs(new Date(v.created_at).getTime() - t) < 15 * 60 * 1000)
+              .map(v => v.id));
+            const del = versions.filter(v => !keep.has(v.id));
+            console.log(`total=${versions.length} keep=${keep.size} delete=${del.length}`);
+            for (const v of del) {
+              const r = await fetch(`https://api.github.com/users/${owner}/packages/container/${repo}/versions/${v.id}`, { method: 'DELETE', headers });
+              if (!r.ok) console.log(`delete ${v.id} -> ${r.status}`);
+            }
+            console.log('Prune done.');
+          })().catch(e => console.log('Prune skipped:', e.message));
+          EOF

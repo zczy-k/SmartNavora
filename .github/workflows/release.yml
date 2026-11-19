@@ -97,3 +97,17 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prune old releases
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          OLD=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[1:] | .[].tagName')
+          for tag in $OLD; do
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes || true
+          done
+          echo "Remaining releases:"
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 10
