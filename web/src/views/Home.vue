@@ -276,9 +276,11 @@
           :selectedCards="selectedCards"
           :selectionMode="selectedCards.length > 0"
           :showSource="true"
+          :frequentMode="true"
           :manual-sort-enabled="canManualSort"
           @contextEdit="handleContextEdit"
           @contextDelete="handleContextDelete"
+          @removeFrequent="handleRemoveFromFrequent"
           @toggleCardSelection="handleToggleCardSelection"
           @openMovePanel="openMovePanel"
           @requireAuth="handleRequireAuth"
@@ -3455,6 +3457,8 @@ async function requireAuth(action) {
     // token有效，直接执行操作
     action();
   } catch (error) {
+    // 用户刚刚在密码弹窗里主动取消，不要再弹第二次
+    if (error?.authCancelled) return;
     // token无效时，优先尝试用记住的密码静默续签
     if (await tryRestoreAuthFromSavedPassword()) {
       action();
@@ -3644,11 +3648,9 @@ function handleContextEdit(card) {
 }
 
 function handleContextDelete(card) {
-  if (isFrequentView.value) {
-    handleRemoveFromFrequent(card);
-  } else {
-    requireAuth(() => handleDeleteCard(card));
-  }
+  // 无论在哪个视图，「删除」都必须是真正的删除卡片，并且经过管理密码验证；
+  // 常用视图里的「从常用移除」是独立菜单项，走 handleRemoveFromFrequent
+  requireAuth(() => handleDeleteCard(card));
 }
 
 function handleRequireAuth(callback) {
@@ -4398,7 +4400,7 @@ async function moveCardToCategory(menuId, subMenuId) {
 }
 
 async function handleRemoveFromFrequent(card) {
-  if (!confirm(`确定要将「${card.title}」从常用列表中移除吗？\n\n这只是清除点击记录，不会删除卡片本身。\n如需彻底删除，请到对应分类视图中操作。`)) return;
+  if (!confirm(`将「${card.title}」从常用列表移除？\n\n卡片仍保留在原分类中，不会删除。`)) return;
 
   try {
     await removeFromFrequent(card.id);
@@ -4407,18 +4409,25 @@ async function handleRemoveFromFrequent(card) {
       data: frequentCards.value,
       timestamp: Date.now()
     }));
+    showToastMessage('已从常用列表移除', 'success');
   } catch (err) {
-    alert('移除失败: ' + (err.response?.data?.error || err.message));
+    showToastMessage('移除失败：' + (err.response?.data?.error || err.message), 'error');
   }
 }
 
-const isDeletingCard = ref(false);
+const deletingCardIds = ref(new Set());
 
 async function handleDeleteCard(card) {
+  if (deletingCardIds.value.has(card.id)) {
+    showToastMessage('这张卡片正在删除中，请稍候', 'info');
+    return;
+  }
   if (!confirm(`确定要删除「${card.title}」吗？`)) return;
-  if (isDeletingCard.value) return;
-  
-  isDeletingCard.value = true;
+
+  const nextDeleting = new Set(deletingCardIds.value);
+  nextDeleting.add(card.id);
+  deletingCardIds.value = nextDeleting;
+
   showProgress('删除卡片', `正在删除「${card.title}」...`);
   
   try {
@@ -4427,22 +4436,27 @@ async function handleDeleteCard(card) {
     if (res.data.dataVersion) {
       saveDataVersion(res.data.dataVersion);
     }
-    
-    syncCurrentCardLists(list => list.filter(item => item.id !== card.id));
+
+    // 先从所有本地列表（含常用列表）立即摘掉，界面不等网络刷新
+    const dropDeleted = (list) => Array.isArray(list) ? list.filter(item => item.id !== card.id) : list;
+    frequentCards.value = dropDeleted(frequentCards.value);
+    localStorage.setItem(FREQUENT_CACHE_KEY, JSON.stringify({
+      data: frequentCards.value,
+      timestamp: Date.now()
+    }));
+    selectedCards.value = selectedCards.value.filter(c => c.id !== card.id);
+    syncCurrentCardLists(dropDeleted);
     clearAllCardsCache();
     await loadCards(true);
-    
-    const selectedIndex = selectedCards.value.findIndex(c => c.id === card.id);
-    if (selectedIndex > -1) {
-      selectedCards.value.splice(selectedIndex, 1);
-    }
     
     updateProgress('删除成功！', 'success');
   } catch (error) {
     console.error('删除卡片失败:', error);
     updateProgress('删除失败：' + (error.response?.data?.error || error.message), 'error');
   } finally {
-    isDeletingCard.value = false;
+    const remaining = new Set(deletingCardIds.value);
+    remaining.delete(card.id);
+    deletingCardIds.value = remaining;
   }
 }
 

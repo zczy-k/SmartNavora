@@ -44,20 +44,30 @@ export const setAuthChallengeHandler = (handler) => {
   authChallengeHandler = handler;
 };
 
-// 尝试用保存的密码静默续签 token
-async function tryRestoreTokenSilently() {
-  const savedData = localStorage.getItem('nav_password_token');
-  if (!savedData) return false;
-  try {
-    const parsed = JSON.parse(savedData);
-    if (!parsed?.password) return false;
-    const res = await instance.post('/verify-password', { password: parsed.password });
-    localStorage.setItem('token', res.data.token);
-    return true;
-  } catch {
-    localStorage.removeItem('nav_password_token');
-    return false;
-  }
+// 尝试用保存的密码静默续签 token（同一时刻只发一次，避免并发 401 时重复校验）
+let restorePromise = null;
+function tryRestoreTokenSilently() {
+  if (restorePromise) return restorePromise;
+  const pending = (async () => {
+    const savedData = localStorage.getItem('nav_password_token');
+    if (!savedData) return false;
+    try {
+      const parsed = JSON.parse(savedData);
+      if (!parsed?.password) return false;
+      const res = await instance.post('/verify-password', { password: parsed.password });
+      localStorage.setItem('token', res.data.token);
+      return true;
+    } catch {
+      localStorage.removeItem('nav_password_token');
+      return false;
+    }
+  })();
+  restorePromise = pending;
+  pending.then(
+    () => { if (restorePromise === pending) restorePromise = null; },
+    () => { if (restorePromise === pending) restorePromise = null; }
+  );
+  return pending;
 }
 
 // 响应拦截器：捕获 401，自动重试
@@ -66,8 +76,13 @@ instance.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // 非 401 或已重试过的请求，直接抛出
-    if (error.response?.status !== 401 || originalRequest._retried) {
+    // 凭证校验接口自身返回的 401 必须原样抛给调用方，
+    // 否则会落入"静默续签 → 校验再失败 → 再静默续签"的自循环，请求永远不结束
+    const requestUrl = originalRequest?.url || '';
+    const isCredentialCheck = requestUrl.includes('/verify-password') || requestUrl.endsWith('/login');
+
+    // 非 401、已重试过、或凭证校验请求，直接抛出
+    if (error.response?.status !== 401 || originalRequest._retried || isCredentialCheck) {
       return Promise.reject(error);
     }
 
@@ -94,6 +109,8 @@ instance.interceptors.response.use(
         return instance(originalRequest);
       } catch {
         authChallengePromise = null;
+        // 标记为用户主动取消，调用方不要再重复弹窗
+        error.authCancelled = true;
         return Promise.reject(error);
       }
     }

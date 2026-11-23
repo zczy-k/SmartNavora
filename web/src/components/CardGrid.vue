@@ -57,7 +57,17 @@
           <span class="context-menu-icon">✏️</span>
           <span>编辑</span>
         </div>
-        <div class="context-menu-item" @click="onContextDelete">
+        <template v-if="frequentMode">
+          <div class="context-menu-item" @click="onContextRemoveFrequent">
+            <span class="context-menu-icon">🔥</span>
+            <span>从常用移除</span>
+          </div>
+          <div class="context-menu-item" @click="onContextDelete">
+            <span class="context-menu-icon">🗑️</span>
+            <span>删除卡片</span>
+          </div>
+        </template>
+        <div v-else class="context-menu-item" @click="onContextDelete">
           <span class="context-menu-icon">🗑️</span>
           <span>删除</span>
         </div>
@@ -70,6 +80,7 @@
           <span class="context-menu-icon">📁</span>
           <span>移动到...</span>
         </div>
+        <template v-if="!frequentMode">
         <div class="context-menu-divider"></div>
         <div class="context-menu-item" :class="{ disabled: !manualSortEnabled }" :title="manualSortEnabled ? '' : '请先在排序菜单切回「默认」再手动排序'" @click="onContextMoveUp">
           <span class="context-menu-icon">⬆️</span>
@@ -79,6 +90,7 @@
           <span class="context-menu-icon">⬇️</span>
           <span>下移</span>
         </div>
+        </template>
         <div class="context-menu-divider"></div>
         <div class="context-menu-item" @click="onContextOpen">
           <span class="context-menu-icon">🔗</span>
@@ -103,12 +115,14 @@ const props = defineProps({
   subCategoryId: [Number, null],
   selectionMode: Boolean,
   showSource: Boolean,
+  frequentMode: { type: Boolean, default: false },
   manualSortEnabled: { type: Boolean, default: true }
 });
 
 const emit = defineEmits([
   'contextEdit',
   'contextDelete',
+  'removeFrequent',
   'toggleCardSelection',
   'openMovePanel',
   'requireAuth',
@@ -243,6 +257,13 @@ function onContextEdit() {
 function onContextDelete() {
   if (contextMenuCard.value) {
     emit('contextDelete', contextMenuCard.value);
+  }
+  closeContextMenu();
+}
+
+function onContextRemoveFrequent() {
+  if (contextMenuCard.value) {
+    emit('removeFrequent', contextMenuCard.value);
   }
   closeContextMenu();
 }
